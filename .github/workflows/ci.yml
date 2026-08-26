@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FINFLOW_ENV: ci
+  FINFLOW_LOG_JSON: "true"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - name: ruff check
+        run: uv run ruff check --output-format=github src tests
+      - name: ruff format
+        run: uv run ruff format --check src tests
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - run: uv run mypy
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - name: pytest
+        run: uv run pytest -m "not integration" --cov --cov-report=xml --cov-report=term-missing
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  # Guard: the pipeline must never depend on a developer's local .env.
+  secrets-check:
+    name: Secret hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure no .env is committed
+        run: |
+          if git ls-files --error-unmatch .env 2>/dev/null; then
+            echo "::error::.env must never be committed"
+            exit 1
+          fi
+          echo "No .env in version control."
