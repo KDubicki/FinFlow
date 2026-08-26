@@ -1,0 +1,47 @@
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Data — never committed
+data/
+*.duckdb
+*.duckdb.wal
+*.parquet
+
+# ML artifacts
+mlruns/
+mlartifacts/
+models/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Dagster
+.dagster/
+dagster_home/
+tmp*/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
