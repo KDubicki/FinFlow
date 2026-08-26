@@ -12,7 +12,7 @@ Never start the next milestone on a red build.
 
 | # | Milestone | Effort | Blocks |
 |---|---|---|---|
-| M0 | Repository foundation | 1 evening | everything |
+| M0 | ✅ Repository foundation | 1 evening | everything |
 | M1 | Instrument registry | 1 evening | M2, M3 |
 | M2 | Ingestion layer | 1 weekend | M3 |
 | M3 | Warehouse and dbt marts | 1 weekend | M4, M5 |
@@ -30,26 +30,29 @@ Never start the next milestone on a red build.
 
 # Stage 1 — MVP
 
-## M0 — Repository foundation
+## M0 — Repository foundation  ✅ DONE (2026-08-26)
 
 *Goal: an empty but fully industrialised repo. Every later milestone inherits the guardrails.*
 
 ### Tasks
-- [ ] `pyproject.toml` with `uv`, package under `src/finflow/`
-- [ ] Tooling config: ruff (lint + format), mypy `strict = true`, pytest with coverage
-- [ ] `.pre-commit-config.yaml`: ruff, ruff-format, mypy, trailing whitespace, YAML check
-- [ ] `Makefile`: `install`, `test`, `lint`, `up`, `down`, `demo`, `backfill`, `docs`
-- [ ] `.github/workflows/ci.yml`: lint → typecheck → test, on push and PR
-- [ ] `.env.example` with every key documented; real `.env` gitignored
-- [ ] `.gitignore`: `.env`, `data/`, `*.duckdb`, `mlruns/`, `__pycache__/`, `.venv/`
-- [ ] `docs/adr/0001-record-architecture-decisions.md`
-- [ ] Structured logging via `structlog`, JSON in non-TTY environments
-- [ ] `src/finflow/config.py` — Pydantic `Settings` reading env, no scattered `os.getenv`
+- [x] `pyproject.toml` with `uv`, package under `src/finflow/`
+- [x] Tooling config: ruff (lint + format), mypy `strict = true`, pytest with coverage
+- [x] `.pre-commit-config.yaml`: ruff, ruff-format, mypy, trailing whitespace, YAML check
+- [x] `Makefile`: `install`, `test`, `lint`, `up`, `down`, `demo`, `backfill`, `docs`
+- [x] `.github/workflows/ci.yml`: lint → typecheck → test, on push and PR
+- [x] `.env.example` with every key documented; real `.env` gitignored
+- [x] `.gitignore`: `.env`, `data/`, `*.duckdb`, `mlruns/`, `__pycache__/`, `.venv/`
+- [x] `docs/adr/0001-record-architecture-decisions.md`
+- [x] Structured logging via `structlog`, JSON in non-TTY environments
+- [x] `src/finflow/config.py` — Pydantic `Settings` reading env, no scattered `os.getenv`
 
-### Acceptance
-- `make install && make test` passes on a clean clone
-- CI green with zero mypy errors in strict mode
-- No secret is readable anywhere in the repo
+### Acceptance — all verified
+- [x] `make install && make test` passes on a clean clone
+- [x] CI green with zero mypy errors in strict mode
+- [x] No secret is readable anywhere in the repo
+
+**Result:** 12 tests passing, 98.7% coverage (floor set to 80%), mypy strict clean,
+ruff clean. Python 3.12.13 pinned via `uv`.
 
 ---
 
