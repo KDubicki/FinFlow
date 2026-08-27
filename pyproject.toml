@@ -15,6 +15,9 @@ dependencies = [
     "polars>=1.17",
     "httpx>=0.28",
     "patito>=0.8",
+    "duckdb>=1.1",
+    "dbt-duckdb>=1.9",
+    "pyarrow>=18",
 ]
 
 [project.optional-dependencies]

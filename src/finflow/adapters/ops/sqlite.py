@@ -4,8 +4,9 @@ SQLite rather than DuckDB is deliberate (``PROJECT.md`` §4.3): this is a
 row-store workload of small transactional writes from more than one process, and
 WAL mode handles concurrent writers, which DuckDB's single-writer model does not.
 
-At this stage it holds watermarks only. ``pipeline_runs``, the outbox and proper
-versioned migrations arrive with the warehouse and the first scheduled run.
+Schema changes go through ``migrations``, applied on start. This store is the one
+piece of state a rebuild cannot recreate, so a change to it has to be a
+migration rather than an edit only new installations would see.
 """
 
 from __future__ import annotations
@@ -16,20 +17,12 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 
+from finflow.adapters.ops.migrations import current_version, migrate
 from finflow.contracts.sources import SourceKey
-from finflow.ports.ops_store import Watermark
+from finflow.logging import get_logger
+from finflow.ports.ops_store import PipelineRun, Watermark
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS watermarks (
-    source           TEXT NOT NULL,
-    symbol           TEXT NOT NULL,
-    last_loaded_date TEXT,
-    last_run_at      TEXT,
-    row_count        INTEGER NOT NULL DEFAULT 0,
-    deferred_until   TEXT,
-    PRIMARY KEY (source, symbol)
-);
-"""
+log = get_logger(__name__)
 
 
 class SqliteOpsStore:
@@ -45,7 +38,9 @@ class SqliteOpsStore:
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
-            conn.executescript(_SCHEMA)
+            applied = migrate(conn)
+            if applied:
+                log.info("ops_store_migrated", applied=applied, version=current_version(conn))
         finally:
             conn.close()
 
@@ -122,6 +117,77 @@ class SqliteOpsStore:
                 """,
                 (str(source), symbol, until.isoformat()),
             )
+
+    # ---- pipeline runs ---------------------------------------------------
+
+    def save_run(self, run: PipelineRun) -> None:
+        """Insert or update one pipeline run."""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO pipeline_runs
+                    (run_id, started_at, ended_at, status, rows_written,
+                     snapshot_id, manifest_ref, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    ended_at     = excluded.ended_at,
+                    status       = excluded.status,
+                    rows_written = excluded.rows_written,
+                    snapshot_id  = excluded.snapshot_id,
+                    manifest_ref = excluded.manifest_ref,
+                    error        = excluded.error
+                """,
+                (
+                    run.run_id,
+                    run.started_at.isoformat(),
+                    _iso(run.ended_at),
+                    run.status,
+                    run.rows_written,
+                    run.snapshot_id,
+                    run.manifest_ref,
+                    run.error,
+                ),
+            )
+
+    def runs(self, limit: int = 20) -> tuple[PipelineRun, ...]:
+        """The most recent runs, newest first."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM pipeline_runs ORDER BY started_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return tuple(_to_run(row) for row in rows)
+
+    def last_successful_run(self) -> PipelineRun | None:
+        """The most recent run that finished cleanly, if there is one."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM pipeline_runs WHERE status = 'succeeded' "
+                "ORDER BY started_at DESC LIMIT 1"
+            ).fetchone()
+        return _to_run(row) if row else None
+
+    @property
+    def schema_version(self) -> int:
+        """The applied migration version, asserted by the deploy smoke test."""
+        conn = sqlite3.connect(self._path)
+        try:
+            return current_version(conn)
+        finally:
+            conn.close()
+
+
+def _to_run(row: tuple[object, ...]) -> PipelineRun:
+    run_id, started, ended, status, rows, snapshot, manifest, error = row
+    return PipelineRun(
+        run_id=str(run_id),
+        started_at=datetime.fromisoformat(str(started)),
+        ended_at=datetime.fromisoformat(str(ended)) if ended else None,
+        status=str(status),
+        rows_written=int(str(rows)) if rows is not None else 0,
+        snapshot_id=str(snapshot) if snapshot else None,
+        manifest_ref=str(manifest) if manifest else None,
+        error=str(error) if error else None,
+    )
 
 
 def _iso(value: date | datetime | None) -> str | None:

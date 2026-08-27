@@ -271,7 +271,12 @@ class IngestUniverse:
     ) -> RawPartition:
         """Stamp provenance and write one immutable partition."""
         ingested_at = self._clock.now()
+        # The client was handed the *vendor's* symbol and echoes it back, so the
+        # identifier column is overwritten with the platform symbol here. Without
+        # this, bronze holds "gld.us" and every join downstream silently misses.
+        identifier = "symbol" if "symbol" in frame.columns else "series_id"
         stamped = frame.with_columns(
+            pl.lit(symbol).alias(identifier),
             pl.lit(str(source_key)).alias("source"),
             pl.lit(ingested_at).alias("ingested_at"),
             pl.lit(run_id).alias("ingestion_run_id"),
