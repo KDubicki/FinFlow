@@ -2,7 +2,7 @@
 # Every target is safe to run repeatedly.
 
 .DEFAULT_GOAL := help
-.PHONY: help install lint format typecheck test test-fast cov check clean up down demo backfill daily docs
+.PHONY: help install lint format typecheck imports registry audit test test-fast cov check clean up down demo backfill daily docs
 
 PYTHON_VERSION := 3.12
 
@@ -26,6 +26,15 @@ format:  ## Apply formatting and auto-fixable lint rules
 typecheck:  ## Run mypy in strict mode
 	uv run mypy
 
+imports:  ## Check the dependency rule
+	uv run lint-imports
+
+registry:  ## Validate every instruments/*.yml
+	uv run python scripts/validate_registry.py
+
+audit:  ## Check dependencies against known advisories
+	uv run pip-audit --strict
+
 test:  ## Run the full test suite with coverage
 	uv run pytest --cov --cov-report=term-missing
 
@@ -36,7 +45,7 @@ cov:  ## Write an HTML coverage report to htmlcov/
 	uv run pytest --cov --cov-report=html
 	@echo "Report: htmlcov/index.html"
 
-check: lint typecheck test  ## Everything CI runs, locally
+check: lint typecheck imports registry test  ## Everything CI runs, locally
 
 clean:  ## Remove caches and build artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage dist build

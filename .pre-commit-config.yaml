@@ -16,6 +16,14 @@ repos:
       - id: no-commit-to-branch
         args: [--branch, main]
 
+  # A committed token is the only mistake in this project with a cost outside
+  # it. This hook is bypassable with --no-verify, which is why CI runs gitleaks
+  # as well (PROJECT.md §11.7).
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.4
     hooks:
