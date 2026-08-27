@@ -32,5 +32,6 @@ repos:
           - pydantic-settings>=2.6
           - structlog>=24.4
           - types-pyyaml
+          - exchange-calendars>=4.5
         args: [--strict]
         pass_filenames: false

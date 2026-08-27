@@ -11,6 +11,7 @@ dependencies = [
     "pydantic-settings>=2.6",
     "structlog>=24.4",
     "pyyaml>=6.0",
+    "exchange-calendars>=4.5",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +22,8 @@ dev = [
     "ruff>=0.8",
     "pre-commit>=4.0",
     "types-pyyaml>=6.0",
+    "import-linter>=2.1",
+    "pip-audit>=2.7",
 ]
 
 [build-system]
@@ -75,6 +78,11 @@ files = ["src", "tests"]
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disallow_untyped_defs = false
+
+# exchange_calendars ships no type information.
+[[tool.mypy.overrides]]
+module = ["exchange_calendars.*"]
+ignore_missing_imports = true
 
 # ---------------------------------------------------------------- pytest
 
