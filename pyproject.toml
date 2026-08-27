@@ -12,6 +12,9 @@ dependencies = [
     "structlog>=24.4",
     "pyyaml>=6.0",
     "exchange-calendars>=4.5",
+    "polars>=1.17",
+    "httpx>=0.28",
+    "patito>=0.8",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +27,8 @@ dev = [
     "types-pyyaml>=6.0",
     "import-linter>=2.1",
     "pip-audit>=2.7",
+    "respx>=0.22",
+    "moto[s3]>=5.0",
 ]
 
 [build-system]
@@ -79,10 +84,16 @@ files = ["src", "tests"]
 module = ["tests.*"]
 disallow_untyped_defs = false
 
-# exchange_calendars ships no type information.
+# Neither ships type information.
 [[tool.mypy.overrides]]
-module = ["exchange_calendars.*"]
+module = ["exchange_calendars.*", "patito.*", "moto.*", "boto3.*", "botocore.*"]
 ignore_missing_imports = true
+
+# Patito's Model resolves to Any without stubs, which makes every schema a
+# subclass of Any. The schemas are still checked at runtime by Patito itself.
+[[tool.mypy.overrides]]
+module = ["finflow.contracts.frames"]
+disallow_subclassing_any = false
 
 # ---------------------------------------------------------------- pytest
 
