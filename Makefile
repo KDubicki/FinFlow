@@ -2,7 +2,7 @@
 # Every target is safe to run repeatedly.
 
 .DEFAULT_GOAL := help
-.PHONY: help install lint format typecheck imports registry audit test test-fast cov check clean up down demo backfill backfill-offline daily docs
+.PHONY: help install lint format typecheck imports registry audit test test-fast cov check clean test-live up down demo backfill backfill-offline daily docs
 
 PYTHON_VERSION := 3.12
 
@@ -35,8 +35,11 @@ registry:  ## Validate every instruments/*.yml
 audit:  ## Check dependencies against known advisories
 	uv run pip-audit --strict
 
-test:  ## Run the full test suite with coverage
-	uv run pytest --cov --cov-report=term-missing
+test:  ## Run the unit suite with coverage (no network)
+	uv run pytest -m "not integration" --cov --cov-report=term-missing
+
+test-live:  ## Run live vendor tests (network; never on a PR)
+	uv run pytest -m integration -v --no-cov
 
 test-fast:  ## Run only unit tests, no coverage
 	uv run pytest -m "not integration" -q --no-cov
