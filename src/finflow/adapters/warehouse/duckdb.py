@@ -43,6 +43,14 @@ class DuckDBWarehouse:
     Construct with ``read_only=True`` for anything that is not the pipeline run.
     Readers can coexist with each other and, on a serving snapshot, with the
     writer working on the live file.
+
+    One caveat worth stating rather than discovering: DuckDB's lock is
+    *cross-process*. Two connections in the same process with the same
+    configuration share the underlying instance and neither is refused. That is
+    fine here -- the collision this guards against is a UI or a shell holding
+    the file while the scheduled run starts, which is always another process --
+    but it means the in-process case is covered by the ``flock`` in the CLI
+    entrypoint, not by this class.
     """
 
     def __init__(self, path: Path | str, *, read_only: bool = False) -> None:

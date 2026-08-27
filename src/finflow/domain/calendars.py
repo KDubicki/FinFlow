@@ -8,7 +8,7 @@ domain knowledge, not an adapter concern.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from functools import lru_cache
 
 import exchange_calendars
@@ -40,5 +40,10 @@ def trading_days(code: str, start: date, end: date) -> list[date]:
     # calendar for a range is tempting but raises when either bound falls
     # outside its own first or last session -- which is exactly what happens
     # when the range starts on a holiday, i.e. most 1 January.
-    calendar = exchange_calendars.get_calendar(code, start=str(start), end=str(end))
+    # Widened by a day at each end before construction. `get_calendar` requires
+    # start < end, so a single-day range -- an instrument with exactly one bar,
+    # which happens on a first backfill -- would otherwise raise.
+    window_start = start - timedelta(days=1)
+    window_end = end + timedelta(days=1)
+    calendar = exchange_calendars.get_calendar(code, start=str(window_start), end=str(window_end))
     return [d.date() for d in calendar.sessions if start <= d.date() <= end]

@@ -81,6 +81,10 @@ def migrate(conn: sqlite3.Connection) -> list[int]:
         conn.executescript(sql)
         conn.execute("INSERT INTO schema_migrations (version, name) VALUES (?, ?)", (version, name))
         applied.append(version)
+    # Committed explicitly. sqlite3's default isolation opens an implicit
+    # transaction, so without this the inserts roll back on close and every
+    # start re-applies every migration -- silently, and forever.
+    conn.commit()
     return applied
 
 

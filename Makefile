@@ -2,7 +2,7 @@
 # Every target is safe to run repeatedly.
 
 .DEFAULT_GOAL := help
-.PHONY: help install lint format typecheck imports registry audit test test-fast cov check clean test-live up down demo backfill backfill-offline daily docs
+.PHONY: help install lint format typecheck imports registry audit test test-fast cov check clean test-live up down demo backfill backfill-offline build daily docs
 
 PYTHON_VERSION := 3.12
 
@@ -74,5 +74,9 @@ backfill-offline:  ## Backfill from the synthetic source, no network
 daily:  ## Run the daily pipeline: ingest -> load -> dbt -> evaluate -> deliver (M4)
 	@echo "Not implemented until M4."
 
-docs:  ## Generate dbt docs (M3)
-	@echo "Not implemented until M3."
+build:  ## Load the raw zone into the warehouse and run dbt
+	uv run finflow-build $(ARGS)
+
+docs:  ## Generate dbt docs
+	cd dbt && DBT_PROFILES_DIR=. uv run dbt docs generate
+	@echo "Browse with: cd dbt && uv run dbt docs serve"
