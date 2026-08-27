@@ -1,0 +1,89 @@
+# Precious metals: the metal itself and the miners.
+#
+# Physically backed metal trusts distribute nothing, so price return is total
+# return here and PROJECT.md §6.4's bias does not apply to this file.
+
+instruments:
+  - symbol: GLD
+    name: SPDR Gold Shares
+    asset_class: commodity
+    sub_class: precious_metals
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2004-11-18
+    backfill_start: 2004-12-01
+    delisted: null
+    sources:
+      stooq: gld.us
+      twelvedata: GLD
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 50_000_000
+    ucits_equivalent: SGLN.UK
+    enabled: true
+    tags: [core, benchmark]
+
+  - symbol: IAU
+    name: iShares Gold Trust
+    asset_class: commodity
+    sub_class: precious_metals
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2005-01-21
+    backfill_start: 2005-02-01
+    delisted: null
+    sources:
+      stooq: iau.us
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 10_000_000
+    ucits_equivalent: IGLN.UK
+    enabled: true
+    tags: []
+
+  - symbol: SLV
+    name: iShares Silver Trust
+    asset_class: commodity
+    sub_class: precious_metals
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2006-04-21
+    backfill_start: 2006-05-01
+    delisted: null
+    sources:
+      stooq: slv.us
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 3 }
+    min_adv_usd: 25_000_000
+    ucits_equivalent: SSLN.UK
+    enabled: true
+    tags: []
+
+  - symbol: GDX
+    name: VanEck Gold Miners ETF
+    asset_class: equity
+    sub_class: gold_miners
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2006-05-16
+    backfill_start: 2006-06-01
+    delisted: null
+    sources:
+      stooq: gdx.us
+    return_basis: price
+    distribution_yield_hint: 0.015
+    costs: { commission_bps: 2, spread_bps: 4 }
+    min_adv_usd: 25_000_000
+    # A VanEck Gold Miners UCITS ETF exists, but its Stooq symbol is unverified.
+    # Left null rather than guessed: M5 verifies every mapping against the US
+    # original before anything is filtered to tradeable_eu.
+    ucits_equivalent: null
+    enabled: true
+    tags: [equity_proxy]

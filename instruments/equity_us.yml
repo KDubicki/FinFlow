@@ -1,0 +1,47 @@
+# US equity index ETFs.
+#
+# Adding an instrument is an edit to this file and nothing else. See
+# docs/ADDING_AN_INSTRUMENT.md.
+
+instruments:
+  - symbol: SPY
+    name: SPDR S&P 500 ETF Trust
+    asset_class: equity
+    sub_class: us_large_cap
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 1993-01-22
+    backfill_start: 1993-02-01
+    delisted: null
+    sources:
+      stooq: spy.us
+      twelvedata: SPY
+    return_basis: price
+    distribution_yield_hint: 0.013    # documentation only; flags price-return drag
+    costs: { commission_bps: 2, spread_bps: 1 }
+    min_adv_usd: 50_000_000
+    ucits_equivalent: CSPX.UK
+    enabled: true
+    tags: [core, benchmark]
+
+  - symbol: QQQ
+    name: Invesco QQQ Trust Series 1
+    asset_class: equity
+    sub_class: us_large_cap_growth
+    exchange: XNAS
+    currency: USD
+    calendar: XNAS
+    inception: 1999-03-10
+    backfill_start: 1999-04-01
+    delisted: null
+    sources:
+      stooq: qqq.us
+      twelvedata: QQQ
+    return_basis: price
+    distribution_yield_hint: 0.006
+    costs: { commission_bps: 2, spread_bps: 1 }
+    min_adv_usd: 50_000_000
+    ucits_equivalent: EQQQ.UK
+    enabled: true
+    tags: [core]
