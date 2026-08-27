@@ -1,0 +1,10 @@
+# Local by default. The path is overridden by the pipeline so dbt writes into
+# the same warehouse the loader built (PROJECT.md §11.1 -- everything on disk).
+finflow:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('FINFLOW_DUCKDB_PATH', '../data/warehouse.duckdb') }}"
+      threads: 4
+      extensions: []

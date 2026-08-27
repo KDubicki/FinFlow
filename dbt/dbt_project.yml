@@ -1,0 +1,27 @@
+name: finflow
+version: "1.0.0"
+config-version: 2
+profile: finflow
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # Overridden by the pipeline so a run is pinned to what it actually read.
+  snapshot_id: "unpinned"
+  registry_commit: "unknown"
+
+models:
+  finflow:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: view
+      +schema: intermediate
+    marts:
+      +materialized: table
