@@ -1,0 +1,41 @@
+# Macro drivers.
+#
+# These are levels, not tradeable prices, and they carry two properties prices
+# do not: a release lag and a revision history. release_lag_days is what stops
+# a decision made on 1 March using a number published on 10 April
+# (PROJECT.md §6.3).
+#
+# All three below are daily market-based series: published the next business
+# day and never restated, so none needs an ALFRED vintage read. The revised,
+# vintage-aware series (CPIAUCSL) arrives with the full universe.
+
+series:
+  - id: us10y_real
+    source: fred
+    source_id: DFII10
+    unit: percent
+    frequency: daily
+    release_lag_days: 1
+    revised: false
+    vintage_aware: false
+    transform: [level, delta_5d, delta_20d]
+
+  - id: usd_broad
+    source: fred
+    source_id: DTWEXBGS
+    unit: index
+    frequency: daily
+    release_lag_days: 1
+    revised: false
+    vintage_aware: false
+    transform: [level, delta_5d, delta_20d]
+
+  - id: vix
+    source: fred
+    source_id: VIXCLS
+    unit: index
+    frequency: daily
+    release_lag_days: 1
+    revised: false
+    vintage_aware: false
+    transform: [level, delta_5d, delta_20d]

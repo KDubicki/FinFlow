@@ -1,0 +1,31 @@
+# Universes.
+#
+# Strategies and cross-sectional models reference a universe, never a hard-coded
+# list, so extending a universe extends everything built on it.
+#
+# These are the final universe *names* holding a subset of their final members:
+# widening the universe only ever adds members, so no name silently changes
+# meaning under a strategy that already references it.
+#
+# Membership may be date-effective — a member may be written as
+# `{ symbol: XLRE, from: 2015-10-08 }` — and is always resolved as of the
+# evaluation date, never as of today (PROJECT.md §5.3).
+
+universes:
+  precious_metals:
+    description: Gold and silver, metal and miners
+    members: [GLD, IAU, SLV, GDX]
+    benchmark: GLD
+
+  equity_core:
+    description: Broad US equity beta
+    members: [SPY, QQQ]
+    benchmark: SPY
+
+  rates_credit:
+    description: Duration and credit risk
+    # IEF is the final benchmark for this universe; it is not yet registered, so
+    # TLT stands in. Safe only because nothing persists a backtest yet — once
+    # runs are stored, a benchmark change is a new strategy version.
+    members: [TLT, HYG]
+    benchmark: TLT

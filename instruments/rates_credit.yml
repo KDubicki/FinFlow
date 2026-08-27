@@ -1,0 +1,48 @@
+# Duration and credit.
+#
+# These are the instruments where price return is most misleading: HYG
+# distributes roughly 6-7% a year, so a long-only price-return backtest over it
+# is simply wrong (PROJECT.md §6.4). Recorded here so the caveat travels with
+# the data rather than living only in a report.
+
+instruments:
+  - symbol: TLT
+    name: iShares 20+ Year Treasury Bond ETF
+    asset_class: rates
+    sub_class: us_treasury_long
+    exchange: XNAS
+    currency: USD
+    calendar: XNYS
+    inception: 2002-07-22
+    backfill_start: 2002-08-01
+    delisted: null
+    sources:
+      stooq: tlt.us
+      twelvedata: TLT
+    return_basis: price
+    distribution_yield_hint: 0.038
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 50_000_000
+    ucits_equivalent: DTLA.UK
+    enabled: true
+    tags: [core, benchmark]
+
+  - symbol: HYG
+    name: iShares iBoxx $ High Yield Corporate Bond ETF
+    asset_class: credit
+    sub_class: us_high_yield
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2007-04-04
+    backfill_start: 2007-05-01
+    delisted: null
+    sources:
+      stooq: hyg.us
+    return_basis: price
+    distribution_yield_hint: 0.065
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 50_000_000
+    ucits_equivalent: IHYU.UK
+    enabled: true
+    tags: [credit_risk_appetite]
