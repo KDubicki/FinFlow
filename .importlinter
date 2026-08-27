@@ -1,0 +1,54 @@
+# The dependency rule of PROJECT.md §4.1, as a build failure rather than a
+# description of the past. Run with `lint-imports`; CI runs it before the test
+# job so a violation fails in seconds.
+
+[importlinter]
+root_package = finflow
+include_external_packages = True
+
+[importlinter:contract:layers]
+name = Dependencies point strictly inward
+type = layers
+# Parenthesised layers are optional: they arrive in M2 and the contract must
+# hold before and after, without anyone editing this file to enable it.
+layers =
+    (finflow.entrypoints)
+    finflow.adapters
+    (finflow.application)
+    finflow.ports | finflow.registry
+    finflow.domain
+    finflow.contracts
+exhaustive = false
+
+[importlinter:contract:core-is-vendor-free]
+name = Nothing inward of the adapters knows a vendor, a database or an orchestrator
+type = forbidden
+# Every package under src/finflow except adapters/ and entrypoints/ belongs
+# here. A `forbidden` contract cannot name a module that does not exist yet, so
+# tests/test_layering.py fails the build when a new package is added and this
+# list is not extended -- which is what stops application/ arriving unguarded.
+source_modules =
+    finflow.contracts
+    finflow.domain
+    finflow.registry
+    finflow.ports
+forbidden_modules =
+    httpx
+    requests
+    urllib
+    duckdb
+    sqlite3
+    dagster
+    mlflow
+    telegram
+    boto3
+allow_indirect_imports = false
+
+# Polars is deliberately absent from the list above. PROJECT.md §4.1 forbids
+# `polars.io` in domain, not Polars itself -- domain compiles the strategy AST
+# to Polars expressions (§7.2), and contracts defines Patito frame schemas over
+# it (§9.1). import-linter cannot name a subpackage of an external package, and
+# the reader functions it was aimed at (pl.read_parquet and friends) hang off
+# the top-level namespace anyway, so a contract here would be theatre. What
+# actually holds the line is that domain is handed frames rather than paths,
+# asserted by the purity test that lands with the backtest engine.
