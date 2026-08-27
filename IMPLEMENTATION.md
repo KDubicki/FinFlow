@@ -229,9 +229,12 @@ Scope is Stooq + FRED + synthetic. Twelve Data reconciliation is M5.
 - [ ] `FredClient` — macro series. Pass ALFRED `realtime_start`/`realtime_end` for `vintage_aware`
       series; store `(series_id, observation_date, vintage_date, value)`
 - [ ] `SyntheticClient` — deterministic seeded OHLCV with realistic vol clustering, for CI and demos
-- [ ] `LocalObjectStore` and `S3ObjectStore` behind the one port; in-memory fake for tests
-- [ ] R2 token scoped **read + write, no delete**, and bucket versioning enabled before the first
-      real backfill. The raw zone is the one unrecoverable asset (`PROJECT.md` §11.3)
+- [ ] `LocalObjectStore` behind the port; in-memory fake for tests. The raw zone is local disk
+      (`PROJECT.md` §11.1) — the port stays because it is what keeps the ingestion service ignorant
+      of where bytes go, not because a second backend is planned
+- [ ] The port exposes **no delete method at all**, and a conformance test asserts it. The raw zone
+      is the one unrecoverable asset (`PROJECT.md` §11.3), so on-premise the type system does the
+      job a delete-less bucket credential would have done
 - [ ] Token-bucket rate limiting per source, configured in settings
 - [ ] Request/response logging with timing and byte counts
 
@@ -359,26 +362,29 @@ the final one from day one.
 - [ ] `/pause`, `/mute <sym> <until>` and `/hold` (`PROJECT.md` §7.7). A paused strategy keeps
       computing and recording so the counterfactual survives; **nothing is ever suppressed silently**
       — the digest always lists what was withheld and why
-- [ ] **Command intake without a long-lived process.** The GitHub Actions runner is ephemeral, so
-      there is no bot daemon to poll for `/position`, `/pause`, `/mute` or `/hold` until the VPS
-      arrives in M6. Instead the daily run drains pending updates with a single `getUpdates` call
-      before it evaluates, applies and records them, and the digest states when each was applied.
-      Commands therefore take effect on the next run rather than immediately, which is stated in the
-      bot's reply rather than left for the user to discover. The `alert-worker` of `PROJECT.md` §4.5
-      becomes a real process at M6; delivery until then is in-process in the same CLI run
+- [ ] **Command intake without a long-lived process.** M4 is a timer firing a CLI run, not a daemon,
+      so there is no bot process polling for `/position`, `/pause`, `/mute` or `/hold`. The run
+      drains pending updates with a single `getUpdates` call before it evaluates, applies and
+      records them, and the digest states when each was applied. Commands therefore take effect on
+      the next run rather than immediately, which the bot says in its reply rather than leaving the
+      user to discover. The `alert-worker` of `PROJECT.md` §4.5 becomes a real process at M6;
+      delivery until then is in-process in the same run
 - [ ] **Dead-man's switch** — ping healthchecks.io on success; grace window set so a missed run
       emails within the hour
-- [ ] `.github/workflows/daily.yml` — scheduled workflow; R2 credentials and Telegram token from
-      GitHub secrets; raw zone pushed to the bucket; `warehouse.duckdb` rebuilt from raw each run;
-      `ops.sqlite` round-tripped
+- [ ] `deploy/finflow-daily.{service,timer}` — a `systemd` timer on the box running `make daily`,
+      with `Persistent=true` so a run missed while the machine was off fires on the next boot.
+      Secrets come from the root-owned `.env` (mode 600); all state is already on local disk, so
+      nothing is pushed, pulled or round-tripped
 - [ ] Tests: exactly-once delivery across a simulated crash between claim and mark; a stale snapshot
       produces a message that says it is stale; a `FrozenClock` makes the whole run deterministic
 - [ ] `concurrency:` group on the workflow so a manual backfill and the schedule cannot overlap, and
       an `flock` in the CLI entrypoint so the same holds locally (`PROJECT.md` §11.6)
 - [ ] Schedule in **UTC**, timed well after the US close, tolerant of a late vendor, with a
       mid-morning retry before declaring a bad day
-- [ ] Nightly ops-store backup: `VACUUM INTO` → gzip → age-encrypt → a **separate** bucket, 30 daily
-      and 12 monthly retained
+- [ ] Nightly ops-store backup: `VACUUM INTO` → gzip → age-encrypt → a **second physical device**
+      (external disk or NAS mount), 30 daily and 12 monthly retained. Plus a nightly
+      `rsync --link-dest` mirror of the raw zone to the same device — a copy on the same disk is not
+      a backup, and on one machine that is the failure that actually happens
 - [ ] Versioned migrations for `ops.sqlite`, applied on start. It is the one piece of state a rebuild
       cannot recreate (`PROJECT.md` §11.4)
 - [ ] `docs/RUNBOOK.md` v1 — what each alert means, first three things to check
@@ -394,7 +400,7 @@ the final one from day one.
 - A Telegram digest arrives every day, and a decision message arrives when the rule fires
 - Killing the workflow mid-delivery and re-running sends no duplicates and no partial portfolios
 - Deliberately breaking the Stooq client causes a failure message, not silence
-- Deleting the local warehouse and re-running rebuilds it from the bucket
+- Deleting the local warehouse and re-running rebuilds it from the raw zone on disk
 - `lint-imports` still passes: `entrypoints` is the only package importing an adapter
 
 ---
@@ -452,8 +458,10 @@ Everything from here improves something already in daily use. Keep the daily run
 
 *Goal: replace the CLI script with a real asset graph, and refuse to publish bad data — narrowly.*
 
-The deployment target moves from GitHub Actions to the VPS here (`PROJECT.md` §11.1), because
-Dagster wants a long-lived daemon.
+The host does not change here — it has been on-premise since M4 (`PROJECT.md` §11.1). What changes
+is that the box gains long-lived services, because Dagster wants a daemon and a webserver. That is a
+smaller step than the migration an earlier draft planned, and it is the main thing running
+on-premise from the start buys.
 
 ### Tasks
 - [ ] Dagster project in `entrypoints/dagster_defs/` with `MultiPartitionsDefinition`:
@@ -486,8 +494,10 @@ Dagster wants a long-lived daemon.
       path
 - [ ] `deploy/smoke.sh` — post-deploy synthetic dry run that must produce a Decision, with automatic
       rollback on failure. Catches a broken image at 22:00 rather than 05:30
-- [ ] `deploy/cloud-init.yaml` — the whole box from nothing: user, Docker, compose files, secrets,
-      start. **Time the rebuild once** so the recovery target in `PROJECT.md` §11.3 is a measurement
+- [ ] `deploy/provision.sh` — the whole box from nothing: user, Docker, data directory, compose
+      files, secrets, start. **Time the rebuild once** so the recovery target in `PROJECT.md` §11.3
+      is a measurement. On-premise there is no provider snapshot to fall back on, so this script is
+      the recovery plan rather than a convenience
 - [ ] `deploy/compose.prod.yml` — image tags, `mem_limit` per service sized so a runaway pipeline
       cannot OOM-kill the alert worker, `restart: unless-stopped`, healthchecks, and `json-file`
       logging with `max-size: 10m` / `max-file: 3`. Differs from the base file in operations only,
@@ -501,10 +511,13 @@ Dagster wants a long-lived daemon.
       likeliest way this host dies (`PROJECT.md` §11.6)
 - [ ] Dagster run-concurrency limit on the pipeline tag, completing the single-writer enforcement
       begun in M4
-- [ ] Monthly CI job: pull the latest ops-store backup, restore into a scratch container, assert
-      watermarks and outbox read back. An untested restore is a hope with a cron schedule
-- [ ] Migrate the scheduled run off GitHub Actions; keep `daily.yml` as a fallback path
-- [ ] `docs/DATA_QUALITY.md`; ADRs: Dagster versus Airflow; moving off GitHub Actions
+- [ ] Monthly job on the box: take the latest ops-store backup from the mirror device, restore into
+      a scratch container, assert watermarks and outbox read back, and report the result into the
+      digest. An untested restore is a hope with a cron schedule — and on-premise CI cannot do it,
+      because the backup never leaves the house
+- [ ] Move the schedule from the `systemd` timer to a Dagster schedule; keep the timer unit as a
+      fallback path, since it needs no daemon to be healthy
+- [ ] `docs/DATA_QUALITY.md`; ADRs: Dagster versus Airflow
 
 ### Acceptance
 - `dagster dev` shows the full asset graph with lineage
@@ -513,15 +526,15 @@ Dagster wants a long-lived daemon.
 - A `sectors` universe with two failed members computes over nine and says so in the digest
 - Dropping below `min_quorum` holds positions instead of rotating
 - One backfill command materialises one instrument's full history
-- The VPS has run the daily pipeline green for seven consecutive days
+- The box has run the daily pipeline green for seven consecutive days
 - A second, read-only connection queries the serving snapshot while a pipeline run is writing the
   warehouse — the property the API depends on in M9, proven before there is an API
 - `make rollback` has been run once against a real previous SHA and the system came back
-- The box has been rebuilt from `cloud-init.yaml` once, and the elapsed time is recorded in the
+- The box has been rebuilt from `provision.sh` once, and the elapsed time is recorded in the
   runbook
 - Starting a manual backfill during a scheduled run blocks or exits cleanly — it never half-writes
 - A restored ops-store backup passes the monthly CI check
-- `nmap` from outside the box shows only the SSH port
+- `nmap` from another machine on the LAN shows only the SSH port, and the router forwards nothing
 
 ---
 
@@ -854,15 +867,16 @@ on: [push, pull_request]
   docs         dbt docs generate  (main branch only)
 
 on: schedule (monthly)
-  restore      pull latest ops backup → restore → assert readable
   rebuild      delete warehouse → rebuild from raw → assert marts identical
 
 on: schedule (nightly)
   live         pytest -m integration --live   (real vendors; failure opens an issue)
-
-on: schedule (daily, 05:30 UTC)          # M4 → M6; the production run
-  daily        finflow daily → Telegram → healthchecks.io ping
 ```
+
+The daily run is **not** here. It fires from a `systemd` timer on the box at 05:30 UTC
+(`PROJECT.md` §11.1) and pings healthchecks.io on success. The monthly ops-store restore check runs
+there too, because the backup never leaves the house — CI cannot test a restore of data it has no
+access to, and pretending otherwise would be worse than doing it locally.
 
 `imports` and `secrets` run before `unit` deliberately: an architecture violation or a leaked token
 should fail in ten seconds, not after the test suite. `uv` and buildx caches are warmed on `main` so
@@ -879,10 +893,11 @@ untrusted code, and on a public portfolio repo it is how tokens leak.
 3. Every outbound message carries `as_of`, `strategy_version` and `snapshot_id`.
 4. A failing check blocks alerts for the affected **instruments** and says so in the digest.
 5. Any incident taking more than ten minutes to diagnose gets a `docs/RUNBOOK.md` entry the same day.
-6. Secrets exist only in GitHub Actions secrets or the VPS `.env` (mode 600), and every credential is
-   scoped to the least privilege that works — the pipeline's object-store token cannot delete.
+6. Secrets exist only in the box's root-owned `.env` (mode 600), and in GitHub Actions secrets for
+   CI alone. The daily path holds vendor keys and a bot token, none of which can destroy anything;
+   the raw zone is protected by a port with no delete method instead.
 7. Every deploy names a git SHA. `latest` is for humans, never for a rollback.
-8. No service publishes a port on anything but `127.0.0.1`.
+8. No service publishes a port on anything but `127.0.0.1`, and the router forwards nothing.
 
 ## Definition of done, per milestone
 
@@ -904,7 +919,7 @@ untrusted code, and on a public portfolio repo it is how tokens leak.
 | **The system is trusted faster than it has earned** | Medium | The trust ladder (`PROJECT.md` §15) with gates fixed in advance and an automatic drop on any instruction issued from bad data. Deciding this now avoids deciding it during a good month |
 | **The user overrides silently and the record decays** | Medium | Explicit `/pause`, `/mute`, `/hold` and a decision journal, so an override is data rather than a gap (§7.7) |
 | **The DSL becomes the project** | **High** | The grammar is closed and the function registry is a fixed whitelist. New functions are a backlog item, never a mid-milestone yes. If M7 slips twice, ship the hand-built AST form and defer the parser |
-| Stooq rate-limits or blocks the runner IP | High | Typed error taxonomy, `deferred_until` resume, secondary source, recorded fixtures keep CI independent |
+| **Stooq blocks or gates the request** | **High** | Already happening: Stooq serves a JavaScript proof-of-work interstitial with HTTP 200. The client validates content type and header row before parsing and raises `SourceRateLimited`, so it defers rather than ingesting HTML as a bar. Mitigated by a secondary source, `deferred_until` resume, and recorded fixtures that keep CI independent of any vendor. Running on-premise from a residential IP helps here, where a cloud runner would not |
 | Vendor changes format silently | High | Nightly live-source test that opens an issue on failure |
 | Retroactive restatements corrupt history | High | Append-only raw zone; `dq_restatements`; runs pinned to a manifest |
 | Macro revisions and release lags leak lookahead | High | ALFRED vintages, release-date joins, and the prefix-stability property over both |
@@ -921,14 +936,15 @@ untrusted code, and on a public portfolio repo it is how tokens leak.
 | Backtest overfitting | Medium | Walk-forward only, costs always on, benchmark always shown, results published honestly |
 | Survivorship bias | Medium | Structurally handled going forward; residual quantified (`PROJECT.md` §6.5) |
 | Silent failure while unattended | Medium | Dead-man's switch, daily digest, staleness stamped on every message |
-| **Disk fills on the VPS** | **High** | The likeliest way a small host dies, and entirely preventable: log rotation, Dagster run retention, MLflow artifact caps, image pruning, and a 75% warning in the digest (`PROJECT.md` §11.6) |
-| **Two writers collide** (manual backfill during the scheduled run) | Medium | Enforced, not documented: `flock`, Dagster concurrency limits, workflow concurrency group. This is the realistic collision because a backfill is what you start *when something looks wrong* |
+| **Disk fills on the box** | **High** | The likeliest way a small host dies, and entirely preventable: log rotation, Dagster run retention, MLflow artifact caps, image pruning, and a 75% warning in the digest (`PROJECT.md` §11.6) |
+| **Two writers collide** (manual backfill during the scheduled run) | Medium | Enforced, not documented: `flock` on the CLI entrypoint and Dagster concurrency limits. This is the realistic collision because a backfill is what you start *when something looks wrong* |
 | **A deploy breaks the daily run** | Medium | SHA-tagged images, smoke test gating the deploy with automatic rollback, `make rollback` exercised once deliberately in M6 |
 | **A service crash-loops unnoticed** | Medium | `restart: unless-stopped` restarts a broken worker forever and the dead-man's switch does not cover it, because the pipeline still succeeds. Compose healthchecks plus a restart-count line in the digest |
 | Ops-store migration fails mid-deploy | Low | Versioned migrations applied on start and asserted by the smoke test; nightly encrypted offsite backup restores in minutes |
-| Ops store lost or corrupted | Low | Nightly `VACUUM INTO` backup to a separate bucket with a **CI-tested** restore; worst case is re-sending one day of alerts |
+| Ops store lost or corrupted | Low | Nightly `VACUUM INTO` backup to a second device with a **monthly tested** restore; worst case is re-sending one day of alerts |
 | Committed secret | Low | `gitleaks` in pre-commit and CI; least-privilege scoped tokens bound the blast radius; rotation documented in the runbook |
-| VPS dies or credentials rotate | Low | Rebuildable from `cloud-init.yaml` in under an hour, timed once so the target is measured; warehouse rebuilt from raw; `daily.yml` kept as a fallback runner |
+| **The box dies** | Medium | On-premise this is the user's problem, not a provider's, so it is ranked higher than it was: rebuildable from `provision.sh`, timed once so the target is measured; warehouse rebuilt from raw; raw zone re-mirrored from the second device; ops store restored from its nightly backup |
+| **The single disk fails, taking the raw zone with it** | Medium | The one genuinely unrecoverable loss. Nightly `rsync --link-dest` mirror to separate hardware; no code path can delete a partition; a quarterly off-site copy if the history becomes hard to re-fetch |
 | Stage 4 destabilises a working MVP | Low | Each A-step ships independently; the MVP path stays runnable throughout |
 | Telegram token leaks | Low | `.env` only, gitignored, `.env.example` documents without values |
 
