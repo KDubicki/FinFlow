@@ -2,7 +2,7 @@
 # Every target is safe to run repeatedly.
 
 .DEFAULT_GOAL := help
-.PHONY: help install lint format typecheck test test-fast cov check clean up down demo backfill docs
+.PHONY: help install lint format typecheck test test-fast cov check clean up down demo backfill daily docs
 
 PYTHON_VERSION := 3.12
 
@@ -44,17 +44,20 @@ clean:  ## Remove caches and build artifacts
 
 # ---- Placeholders, implemented in later milestones -----------------------
 
-up:  ## Start local services (M7)
-	@echo "Not implemented until M7."
+up:  ## Start local services (M6)
+	@echo "Not implemented until M6."
 
-down:  ## Stop local services (M7)
-	@echo "Not implemented until M7."
+down:  ## Stop local services (M6)
+	@echo "Not implemented until M6."
 
-demo:  ## Seed data and run the pipeline offline (M8)
-	@echo "Not implemented until M8."
+demo:  ## Seed data and run the pipeline offline (M10)
+	@echo "Not implemented until M10."
 
 backfill:  ## Backfill the full instrument universe (M2)
 	@echo "Not implemented until M2."
+
+daily:  ## Run the daily pipeline: ingest -> load -> dbt -> evaluate -> deliver (M4)
+	@echo "Not implemented until M4."
 
 docs:  ## Generate dbt docs (M3)
 	@echo "Not implemented until M3."
