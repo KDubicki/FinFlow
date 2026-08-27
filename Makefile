@@ -2,7 +2,7 @@
 # Every target is safe to run repeatedly.
 
 .DEFAULT_GOAL := help
-.PHONY: help install lint format typecheck imports registry audit test test-fast cov check clean up down demo backfill daily docs
+.PHONY: help install lint format typecheck imports registry audit test test-fast cov check clean up down demo backfill backfill-offline daily docs
 
 PYTHON_VERSION := 3.12
 
@@ -62,8 +62,11 @@ down:  ## Stop local services (M6)
 demo:  ## Seed data and run the pipeline offline (M10)
 	@echo "Not implemented until M10."
 
-backfill:  ## Backfill the full instrument universe (M2)
-	@echo "Not implemented until M2."
+backfill:  ## Backfill the full instrument universe
+	uv run finflow-backfill $(ARGS)
+
+backfill-offline:  ## Backfill from the synthetic source, no network
+	uv run finflow-backfill --offline $(ARGS)
 
 daily:  ## Run the daily pipeline: ingest -> load -> dbt -> evaluate -> deliver (M4)
 	@echo "Not implemented until M4."

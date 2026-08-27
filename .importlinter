@@ -9,12 +9,10 @@ include_external_packages = True
 [importlinter:contract:layers]
 name = Dependencies point strictly inward
 type = layers
-# Parenthesised layers are optional: they arrive in M2 and the contract must
-# hold before and after, without anyone editing this file to enable it.
 layers =
-    (finflow.entrypoints)
+    finflow.entrypoints
     finflow.adapters
-    (finflow.application)
+    finflow.application
     finflow.ports | finflow.registry
     finflow.domain
     finflow.contracts
@@ -32,6 +30,7 @@ source_modules =
     finflow.domain
     finflow.registry
     finflow.ports
+    finflow.application
 forbidden_modules =
     httpx
     requests

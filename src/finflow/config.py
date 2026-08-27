@@ -55,6 +55,15 @@ class Settings(BaseSettings):
     # ---- Paths -----------------------------------------------------------
     data_dir: Path = Path("./data")
     duckdb_path: Path = Path("./data/finflow.duckdb")
+    backup_dir: Path | None = Field(
+        default=None,
+        description=(
+            "Mirror target for the raw zone and the ops store. Must be on a "
+            "different physical device -- a copy on the same disk is not a "
+            "backup (PROJECT.md §11.3)."
+        ),
+    )
+    registry_dir: Path = Path("./instruments")
 
     # ---- Data source credentials ----------------------------------------
     # Stooq requires no key, so it has no entry here.
@@ -69,12 +78,28 @@ class Settings(BaseSettings):
     # ---- Ingestion tuning ------------------------------------------------
     http_timeout_seconds: float = Field(default=30.0, gt=0)
     http_max_retries: int = Field(default=5, ge=0, le=10)
+    http_user_agent: str = "finflow/0.1 (personal research pipeline)"
 
-    @field_validator("data_dir", "duckdb_path")
+    stooq_base_url: str = "https://stooq.com/q/d/l/"
+    fred_base_url: str = "https://api.stlouisfed.org/fred"
+
+    # Requests per minute, per source. Deliberately conservative: Stooq's
+    # per-IP cap is real and undocumented, so the cost of guessing low is a
+    # slower backfill and the cost of guessing high is a block.
+    stooq_requests_per_minute: float = Field(default=20.0, gt=0)
+    fred_requests_per_minute: float = Field(default=60.0, gt=0)
+    twelvedata_requests_per_minute: float = Field(default=8.0, gt=0)
+
+    # How long a source is left alone after it reports a rate limit.
+    rate_limit_deferral_hours: float = Field(default=12.0, gt=0)
+
+    synthetic_seed: int = 20260827
+
+    @field_validator("data_dir", "duckdb_path", "registry_dir", "backup_dir")
     @classmethod
-    def _expand(cls, value: Path) -> Path:
+    def _expand(cls, value: Path | None) -> Path | None:
         """Resolve ``~`` so paths behave the same regardless of shell."""
-        return value.expanduser()
+        return value.expanduser() if value is not None else None
 
     @property
     def raw_dir(self) -> Path:

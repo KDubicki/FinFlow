@@ -30,6 +30,9 @@ dev = [
     "respx>=0.22",
 ]
 
+[project.scripts]
+finflow-backfill = "finflow.entrypoints.cli.backfill:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
