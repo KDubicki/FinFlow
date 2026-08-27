@@ -88,6 +88,36 @@ jobs:
       - name: pip-audit
         run: uv run pip-audit --strict
 
+  contracts:
+    name: Dialect neutrality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - name: Mart SQL stays portable
+        run: uv run python scripts/check_dialect_neutrality.py
+
+  dbt:
+    name: dbt build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - name: Seed a slim dataset from the synthetic source
+        run: uv run finflow-backfill --offline --symbols GLD SPY
+        env:
+          FINFLOW_DATA_DIR: ./ci-data
+      - name: Build and test the warehouse
+        run: uv run finflow-build
+        env:
+          FINFLOW_DATA_DIR: ./ci-data
+
   test:
     name: Test
     runs-on: ubuntu-latest

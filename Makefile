@@ -2,7 +2,7 @@
 # Every target is safe to run repeatedly.
 
 .DEFAULT_GOAL := help
-.PHONY: help install lint format typecheck imports registry audit test test-fast cov check clean test-live up down demo backfill backfill-offline build daily docs
+.PHONY: help install lint format typecheck imports registry dialect audit test test-fast cov check clean test-live up down demo backfill backfill-offline build daily docs
 
 PYTHON_VERSION := 3.12
 
@@ -32,6 +32,9 @@ imports:  ## Check the dependency rule
 registry:  ## Validate every instruments/*.yml
 	uv run python scripts/validate_registry.py
 
+dialect:  ## Check mart SQL stays portable
+	uv run python scripts/check_dialect_neutrality.py
+
 audit:  ## Check dependencies against known advisories
 	uv run pip-audit --strict
 
@@ -48,7 +51,7 @@ cov:  ## Write an HTML coverage report to htmlcov/
 	uv run pytest --cov --cov-report=html
 	@echo "Report: htmlcov/index.html"
 
-check: lint typecheck imports registry test  ## Everything CI runs, locally
+check: lint typecheck imports registry dialect test  ## Everything CI runs, locally
 
 clean:  ## Remove caches and build artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage dist build
