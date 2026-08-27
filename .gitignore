@@ -10,15 +10,18 @@ data/
 *.duckdb.wal
 *.parquet
 
-# ML artifacts
+# ML artifacts. Anchored to the repository root: a bare `models/` also matches
+# dbt/models/, which silently left the entire warehouse model layer untracked.
 mlruns/
 mlartifacts/
-models/
+/models/
 
-# dbt
+# dbt. Packages are installed from the committed package-lock.yml, so they are
+# ignored the way node_modules is; the lockfile is what gets versioned.
 dbt/target/
 dbt/dbt_packages/
 dbt/logs/
+dbt/.user.yml
 
 # Dagster
 .dagster/
@@ -46,7 +49,9 @@ build/
 .vscode/
 *.swp
 
-# dbt
+# dbt. Packages are installed from the committed package-lock.yml, so they are
+# ignored the way node_modules is; the lockfile is what gets versioned.
 dbt/target/
 dbt/dbt_packages/
 dbt/logs/
+dbt/.user.yml

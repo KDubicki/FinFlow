@@ -109,6 +109,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-extras
+      - name: Install dbt packages
+        run: uv run dbt deps --project-dir dbt --profiles-dir dbt
       - name: Seed a slim dataset from the synthetic source
         run: uv run finflow-backfill --offline --symbols GLD SPY
         env:

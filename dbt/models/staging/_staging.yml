@@ -1,0 +1,30 @@
+version: 2
+
+models:
+  - name: stg_ohlcv
+    description: >
+      Typed, renamed and deduplicated bars. One row per instrument, date and
+      source: choosing between vendors is a mart decision, not a staging one
+      (PROJECT.md §6.6).
+    columns:
+      - name: symbol
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: source
+        tests: [not_null]
+      - name: close
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+
+  - name: stg_macro
+    description: Typed macro observations, one row per series, date and vintage.
+    columns:
+      - name: series_id
+        tests: [not_null]
+      - name: observation_date
+        tests: [not_null]

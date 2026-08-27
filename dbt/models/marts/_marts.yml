@@ -1,0 +1,224 @@
+version: 2
+
+models:
+  - name: dim_instrument
+    description: >
+      The instrument dimension. The registry is its only writer -- nothing
+      downstream inserts an instrument it found in a feed (PROJECT.md §9.2).
+      valid_from is the git commit date of the registry change, not the run
+      date, so a backfill in November cannot stamp an August change with
+      November.
+    config:
+      contract: {enforced: true}
+    columns:
+      - name: instrument_key
+        data_type: varchar
+        constraints: [{type: not_null}, {type: primary_key}]
+        tests: [unique, not_null]
+      - name: symbol
+        data_type: varchar
+      - name: name
+        data_type: varchar
+      - name: asset_class
+        data_type: varchar
+        tests:
+          - accepted_values:
+              arguments:
+                values: [equity, commodity, rates, credit, currency]
+      - name: sub_class
+        data_type: varchar
+      - name: exchange
+        data_type: varchar
+      - name: currency
+        data_type: varchar
+      - name: calendar
+        data_type: varchar
+      - name: inception
+        data_type: date
+      - name: backfill_start
+        data_type: date
+      - name: delisted
+        data_type: date
+      - name: return_basis
+        data_type: varchar
+        tests:
+          - accepted_values:
+              arguments: {values: [price, total]}
+      - name: commission_bps
+        data_type: double
+        tests: [not_null]
+      - name: spread_bps
+        data_type: double
+        tests: [not_null]
+      - name: min_adv_usd
+        data_type: double
+      - name: ucits_equivalent
+        data_type: varchar
+      - name: tradeable_eu
+        data_type: boolean
+      - name: enabled
+        data_type: boolean
+      - name: registry_commit
+        data_type: varchar
+      - name: valid_from
+        data_type: timestamp with time zone
+      - name: valid_to
+        data_type: timestamp
+      - name: is_current
+        data_type: boolean
+
+  - name: dim_universe
+    config:
+      contract: {enforced: true}
+    columns:
+      - name: universe_key
+        data_type: varchar
+        constraints: [{type: not_null}]
+        tests: [unique, not_null]
+      - name: name
+        data_type: varchar
+      - name: description
+        data_type: varchar
+      - name: benchmark_symbol
+        data_type: varchar
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_instrument')
+                field: instrument_key
+
+  - name: bridge_universe_member
+    description: Date-effective membership, resolved as of the evaluation date.
+    config:
+      contract: {enforced: true}
+    columns:
+      - name: universe_key
+        data_type: varchar
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_universe'), field: universe_key}
+      - name: instrument_key
+        data_type: varchar
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_instrument'), field: instrument_key}
+      - name: valid_from
+        data_type: date
+      - name: valid_to
+        data_type: date
+
+  - name: dim_source
+    config:
+      contract: {enforced: true}
+    columns:
+      - name: source_key
+        data_type: varchar
+        tests: [unique, not_null]
+      - name: name
+        data_type: varchar
+      - name: tier
+        data_type: varchar
+        tests:
+          - accepted_values:
+              arguments:
+                values: [primary, reconciliation, synthetic, unknown]
+
+  - name: dim_date
+    config:
+      contract: {enforced: true}
+    columns:
+      - name: date_key
+        data_type: date
+        tests: [unique, not_null]
+      - name: date
+        data_type: date
+      - name: year
+        data_type: bigint
+      - name: month
+        data_type: bigint
+      - name: day
+        data_type: bigint
+      - name: day_of_week
+        data_type: bigint
+      - name: quarter
+        data_type: bigint
+      - name: is_month_end
+        data_type: boolean
+      - name: trading_day_xnys
+        data_type: boolean
+
+  - name: fct_ohlcv_daily
+    description: One row per instrument and date, from the primary source.
+    config:
+      contract: {enforced: true}
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [symbol, date]
+      - no_trading_day_gaps:
+          arguments:
+            symbol_column: symbol
+            date_column: date
+    columns:
+      - name: symbol
+        data_type: varchar
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_instrument'), field: instrument_key}
+      - name: date
+        data_type: date
+        tests: [not_null]
+      - name: open
+        data_type: double
+      - name: high
+        data_type: double
+      - name: low
+        data_type: double
+      - name: close
+        data_type: double
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+      - name: volume
+        data_type: double
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments: {min_value: 0}
+      - name: source
+        data_type: varchar
+        tests:
+          - relationships:
+              arguments: {to: ref('dim_source'), field: source_key}
+      - name: ingested_at
+        data_type: timestamp
+      - name: snapshot_id
+        data_type: varchar
+
+  - name: fct_macro_daily
+    description: First release per observation, dated by availability.
+    config:
+      contract: {enforced: true}
+    columns:
+      - name: series_id
+        data_type: varchar
+        tests: [not_null]
+      - name: observation_date
+        data_type: date
+        tests: [not_null]
+      - name: available_from
+        data_type: date
+        tests: [not_null]
+      - name: value
+        data_type: double
+      - name: vintage_date
+        data_type: date
+      - name: is_revised
+        data_type: boolean
+      - name: snapshot_id
+        data_type: varchar

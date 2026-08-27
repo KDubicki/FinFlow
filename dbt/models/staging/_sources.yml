@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: Tables written by the loader from the append-only raw zone.
+    schema: main
+    tables:
+      - name: bronze_ohlcv
+      - name: bronze_macro
+      - name: bronze_quarantine
+      - name: dq_restatements
+      - name: registry_instruments
+      - name: registry_universe_members
+      - name: registry_macro_series
+      - name: calendar_days

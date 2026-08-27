@@ -37,6 +37,37 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def ensure_dbt_packages() -> None:
+    """Install dbt packages if they are absent.
+
+    A rebuilt box or a fresh clone has no ``dbt_packages/`` -- it is ignored the
+    way ``node_modules`` is, with ``package-lock.yml`` committed instead. The
+    daily run must not fail on a missing manual step after a recovery, which is
+    the whole point of the box being rebuildable from one script
+    (``PROJECT.md`` §11.5).
+
+    Only run when the directory is missing, so the ordinary daily path makes no
+    network call to the package hub.
+    """
+    if (DBT_DIR / "dbt_packages").is_dir():
+        return
+
+    log.info("dbt_deps_bootstrapping", reason="dbt_packages/ is absent")
+    result = subprocess.run(
+        ["dbt", "deps", "--project-dir", str(DBT_DIR), "--profiles-dir", str(DBT_DIR)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        sys.stdout.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        raise RuntimeError(
+            "dbt deps failed. Run `make dbt-deps` once with network access, "
+            f"or check dbt/package-lock.yml (exit code {result.returncode})"
+        )
+
+
 def run_dbt(warehouse_path: Path, snapshot_id: str, registry_commit: str | None) -> None:
     """Run ``dbt build`` against the warehouse this process just loaded.
 
@@ -44,6 +75,7 @@ def run_dbt(warehouse_path: Path, snapshot_id: str, registry_commit: str | None)
     was built from -- a mart that cannot say what it was built from cannot
     support a reproducible backtest.
     """
+    ensure_dbt_packages()
     result = subprocess.run(
         [
             "dbt",
