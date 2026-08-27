@@ -144,7 +144,7 @@ Six layers. **Dependencies point strictly inward**; no layer may import one list
 | `registry` | The registry value object and its loader. | `contracts`, `domain` |
 | `ports` | Protocols only: `SourceClient`, `ObjectStore`, `Warehouse`, `OpsStore`, `Notifier`, `Clock`, `ModelProvider`. | `contracts`, `domain` |
 | `application` | Use cases: `IngestUniverse`, `BuildWarehouse`, `EvaluateStrategies`, `RunBacktest`, `DeliverAlerts`. Orchestrates domain objects through ports. Knows no concrete adapter. | all of the above |
-| `adapters` · `entrypoints` | Stooq, FRED, DuckDB, SQLite, R2, Telegram, MLflow · CLI, FastAPI, Streamlit, Dagster definitions. | everything |
+| `adapters` · `entrypoints` | Stooq, FRED, DuckDB, SQLite, local disk, Telegram, MLflow · CLI, FastAPI, Streamlit, Dagster definitions. | everything |
 
 Two consequences worth being explicit about, because they are the ones that pay off:
 
@@ -168,7 +168,7 @@ test double.
 | Port | Real implementations | Test double | The contract it must honour |
 |---|---|---|---|
 | `SourceClient` | Stooq, FRED, Twelve Data | Synthetic, recorded fixtures | `fetch()` returns the canonical frame or raises from the error taxonomy (§6.7); declares `capabilities()`; never retries internally |
-| `ObjectStore` | Local filesystem, S3/R2 | In-memory | Write-once keys; listing is ordered; no update-in-place |
+| `ObjectStore` | Local filesystem | In-memory | Write-once keys; listing is ordered; no update-in-place |
 | `Warehouse` | DuckDB | In-memory DuckDB | Exactly one writer (§4.4); read connections are read-only |
 | `OpsStore` | SQLite | In-memory SQLite | Transactional; supports the outbox claim-and-mark pattern |
 | `Notifier` | Telegram | Recording fake | At-least-once delivery; caller owns idempotency |
@@ -228,11 +228,11 @@ needs anyway for CDC).
 
 | Process | Runs where | Writes | Reads |
 |---|---|---|---|
-| `dagster-daemon` + run workers | VPS | `warehouse.duckdb` (sole writer), `ops.sqlite` | raw zone |
-| `alert-worker` | VPS | `ops.sqlite` | serving snapshot (read-only) |
-| `api` | VPS, localhost-bound | nothing | serving snapshot (read-only), `ops.sqlite` (read-only) |
-| `streamlit` | VPS | nothing | the API only — never a database |
-| `dagster-webserver` | VPS, localhost-bound | Dagster's own storage | — |
+| `dagster-daemon` + run workers | the box | `warehouse.duckdb` (sole writer), `ops.sqlite` | raw zone |
+| `alert-worker` | the box | `ops.sqlite` | serving snapshot (read-only) |
+| `api` | the box, localhost-bound | nothing | serving snapshot (read-only), `ops.sqlite` (read-only) |
+| `streamlit` | the box | nothing | the API only — never a database |
+| `dagster-webserver` | the box, localhost-bound | Dagster's own storage | — |
 
 **This is the topology from M6 onward**, when there is a host to keep processes alive. Before that
 the whole daily path is a single short-lived CLI process on a GitHub Actions runner (§11.1): it
@@ -246,7 +246,7 @@ Streamlit session holding the live file open would make the next 05:30 run fail 
 a bug that only appears once something actually runs unattended, which is precisely the class this
 project exists to take seriously.
 
-Five processes on a 4 GB box is not free. Each carries an explicit `mem_limit` in the compose
+"The box" is the on-premise machine of §11.1. Five processes on a 4 GB box is not free. Each carries an explicit `mem_limit` in the compose
 overlay, sized so that a runaway pipeline run **cannot** OOM-kill the alert worker — because the
 kernel's OOM killer picks its victim by score, not by importance, and the process that matters most
 here is the smallest one. The write-lock column above is enforced rather than documented (§11.6);
@@ -1064,7 +1064,7 @@ with one position, and both strategy types share one code path.
 
 ## 10. MVP — the Lean Warehouse
 
-**Decision: this is what gets built first.** No cluster, no broker, no object store. Everything runs
+**Decision: this is what gets built first.** No cluster, no broker, no cloud. Everything runs
 in-process; the platform boots in seconds and the full test suite runs in CI in under two minutes.
 At 300k rows (§2) this is not a compromise — it is the correct architecture, and §12 is honest about
 the lakehouse being a learning exercise rather than a necessity.
@@ -1076,7 +1076,7 @@ the lakehouse being a learning exercise rather than a necessity.
      append-only · watermarked · retried  ◀──────┘ sources, calendars, lags
      per error class (§6.7)
             │
-     raw Parquet in an ObjectStore, partitioned by ingestion run
+     raw Parquet on local disk via the ObjectStore port, per ingestion run
             │        (never overwritten; a manifest pins each run, §6.2)
             ▼
    warehouse.duckdb (single writer)  ◀── dbt (staging → intermediate → marts)
@@ -1097,7 +1097,7 @@ the lakehouse being a learning exercise rather than a necessity.
             └──▶ Decision ──▶ alerts_outbox ──▶ alert-worker ──▶ Telegram
 
   Dagster (thin asset wrappers), partitioned by instrument × date
-  GitHub Actions runs the whole thing on every PR — and, until M6, in production
+  GitHub Actions runs the whole thing on every PR; the daily run is on-premise from M4
 ```
 
 | Layer | Choice | Why this one |
@@ -1118,7 +1118,7 @@ the lakehouse being a learning exercise rather than a necessity.
 | Orchestration | Dagster — thin wrappers only | §4.1 |
 | Packaging | Multi-stage image, pinned base digest, non-root, lockfile-only install; Spark in a separate image | §11.4 |
 | Deploy | GHCR images tagged by git SHA; `make deploy` / `make rollback`; smoke test gates the deploy | §11.4 |
-| Host | A small VPS, rebuildable from one `cloud-init.yaml`; every port bound to localhost | §11.5 |
+| Host | A machine the user owns, rebuildable from one provisioning script; every port bound to localhost | §11.5 |
 | CI/CD | lint → type → **imports** → registry → secrets/deps/image scan → test → `dbt build` → build → deploy | §11.7 |
 
 **One architectural constraint that costs nothing now and saves Stage 4:** mart SQL stays
@@ -1138,17 +1138,33 @@ A platform that only runs when its author types `make` is a demo. Everything bel
 
 ### 11.1 Where it runs
 
+**This runs on hardware the user owns.** Data and compute are on-premise: no object store, no
+managed database, no cloud runner in the daily path. Vendors are still called over the internet —
+that is what "fetch the prices" means — but nothing the system produces leaves the box.
+
 | Stage | Host | Why |
 |---|---|---|
-| **From the vertical slice (M4)** | GitHub Actions scheduled workflow | Nothing to operate, secrets already managed, and the run log is a record that the pipeline works. Cron fires late under load and the job caps at 6h — irrelevant for a 90-second run. |
-| **From orchestration (M6) onward** | A small always-on VPS running Docker Compose | Dagster wants a long-lived daemon and a webserver (§4.5). |
+| **From the vertical slice (M4)** | An always-on machine the user owns, run by a `systemd` timer | A mini PC, a home server, or a spare box. All state is on local disk, so there is nothing to synchronise and nothing to pay for. |
+| **From orchestration (M6) onward** | The same machine, running Docker Compose | Dagster wants a long-lived daemon and a webserver (§4.5). The host does not change; it gains services. |
+| Continuous integration | GitHub Actions | CI is not the daily path. Running the test suite in the cloud costs nothing and keeps the repository honest. |
 | Never | A laptop | It will be shut at 05:00. |
 
-State on GitHub Actions is the honest problem: the runner is ephemeral. Raw Parquet goes to an
-S3-compatible bucket (Cloudflare R2's free tier is several hundred times the requirement) via the
-`ObjectStore` port; `warehouse.duckdb` is rebuilt from raw on every run — seconds at this size, and
-a *feature*, since it proves the analytical store is disposable. `ops.sqlite` is the one
-genuinely stateful piece; it is pulled and pushed around each run, or lives on the VPS from M6.
+This is a simpler arrangement than the alternative, and worth saying why. An earlier draft ran the
+daily job on a GitHub Actions runner and pushed the raw zone to Cloudflare R2, because the runner is
+ephemeral and state had to live somewhere. On-premise, that entire problem disappears: the raw zone,
+`warehouse.duckdb` and `ops.sqlite` are files in one directory on one disk, and there is no
+round-tripping of state around each run, no bucket credentials in the daily path, and no migration
+from one host to another at M6.
+
+What it costs is that **availability is now the user's problem**. A cloud runner is somebody else's
+job to keep alive; a box under a desk is not. Two things follow, and both are already in the design:
+the dead-man's switch (§11.2) matters more here than it would have, and it must run *off* the box —
+a monitor on the machine it is monitoring cannot report that the machine is down. And the recovery
+procedure (§11.5) has to be real, because there is no provider to re-provision from.
+
+`warehouse.duckdb` is still rebuilt from raw rather than backed up — seconds at this size, and a
+*feature*, since it keeps proving the analytical store is disposable. `ops.sqlite` remains the one
+genuinely stateful piece (§4.3).
 
 ### 11.2 Knowing it still works
 
@@ -1172,23 +1188,36 @@ Silence must never read as success.
 
 ### 11.3 Not losing the data
 
-- **Raw zone**: append-only, in object storage, bucket versioning on, with a lifecycle rule rather
-  than manual pruning. The pipeline's R2 token is scoped **read and write but not delete** — a
-  one-line decision that makes "I accidentally wiped thirty years of history" structurally
-  impossible rather than merely unlikely.
+- **Raw zone**: append-only on local disk, and mirrored nightly to a **second physical device** —
+  an external disk or a NAS share — with `rsync --archive --link-dest` so each night is a browsable
+  snapshot that costs only the changed files. The `ObjectStore` port has **no delete method at all**,
+  so no code path in the system can remove a partition; pruning is a deliberate manual act against
+  the filesystem, not something the pipeline can do by accident. That is the on-premise equivalent
+  of the delete-less credential, and it is enforced by the type system rather than by a policy
+  document.
+- **A copy on the same disk is not a backup**, and on one machine this is the failure that actually
+  happens: the disk dies and takes the raw zone and its "backup" with it. The mirror target must be
+  a different device, and if the machine ever holds anything the user would grieve, a third copy
+  off-site — an encrypted archive on a drive kept elsewhere, refreshed quarterly — is the honest
+  minimum. This is the one place where on-premise is genuinely weaker than a bucket with
+  versioning, and pretending otherwise would be the kind of comfortable omission this document
+  exists to avoid.
 - **Analytical store**: derived, never backed up, rebuilt from raw. A monthly CI job asserts the
   rebuild reproduces the marts.
 - **Operational store**: small, authoritative, and the only thing that genuinely needs backing up.
   Nightly `VACUUM INTO` (an SQLite-consistent snapshot, unlike copying a live file), gzipped,
-  age-encrypted, pushed to a **different bucket** from the raw zone with 30 daily and 12 monthly
-  copies retained. A backup on the same box is not a backup.
+  age-encrypted, and written to the **same second device** as the raw-zone mirror, with 30 daily and
+  12 monthly copies retained. It is under a megabyte, so an encrypted copy can also go somewhere
+  genuinely off-site at no real cost — and since it is the only state a rebuild cannot recreate,
+  that is the one file worth the extra step.
 - **The restore is exercised, not assumed.** A monthly CI job pulls the latest backup, restores it
   into a scratch container and asserts the watermarks and outbox read back correctly. An untested
   restore is a hope with a cron schedule.
-- **Stated recovery targets**, so "how bad is it" has an answer before it happens: losing the VPS
-  costs under an hour (§11.5) and at most one day of alerts; losing the ops store costs one day;
-  losing the raw zone is the only unrecoverable event, which is why it is the one thing with
-  versioning, a delete-less token and a separate lifecycle policy.
+- **Stated recovery targets**, so "how bad is it" has an answer before it happens: losing the
+  machine costs a reinstall plus a restore (§11.5) and at most one day of alerts; losing the ops
+  store costs one day; losing the raw zone *and* its mirror simultaneously is the only unrecoverable
+  event, which is why the mirror is on separate hardware and why no code path can delete a
+  partition.
 
 ### 11.4 Getting code onto the box
 
@@ -1226,17 +1255,23 @@ merge to main ──▶ CI builds image, tags it ghcr.io/…/finflow:<git-sha> a
 
 ### 11.5 The box
 
-A single small VPS is a pet unless it is reproducible, and it is exposed to the internet within
-minutes of existing.
+A single machine is a pet unless it is reproducible. On-premise this matters more than it would on
+a VPS, because there is no provider to re-provision from and no snapshot to roll back to — the
+recovery story is entirely the user's, so it has to be written down and rehearsed.
 
-- **Rebuildable from a single `cloud-init.yaml`**: create user, install Docker, pull the compose
-  files, load secrets, start. The recovery procedure is "provision a new box, run one command,
-  restore the ops store" — and it is timed once so §11.3's target is a measurement rather than a
-  guess.
-- **Nothing binds to a public interface.** Every published port is `127.0.0.1:<port>`, and access is
-  over an SSH tunnel or Tailscale. This matters more than it sounds: Docker inserts its own
-  iptables rules and **publishing a port bypasses UFW entirely**, so a `ports: 8000:8000` with a
-  tidy firewall behind it is still open to the world. Explicit localhost binding is the fix, and it
+- **Rebuildable from a single provisioning script**: create user, install Docker, lay out the data
+  directory, load secrets from the `.env`, start the services. The recovery procedure is "install
+  the OS, run one script, restore the ops store, re-mirror the raw zone from the second device" —
+  and it is timed once so §11.3's target is a measurement rather than a guess.
+- **The machine does not need to be exposed to the internet at all**, and should not be. It makes
+  outbound calls to vendors and to Telegram; nothing needs to reach it. That is a meaningful
+  security improvement over a public VPS, and it is the main thing on-premise buys back for the
+  availability it costs.
+- **Nothing binds to a public interface.** Every published port is `127.0.0.1:<port>`, and access
+  from another machine is over an SSH tunnel or Tailscale. This matters even on a home network:
+  Docker inserts its own iptables rules and **publishing a port bypasses UFW entirely**, so a
+  `ports: 8000:8000` behind a tidy firewall is still reachable by anything on the LAN — and, if the
+  router forwards a port or UPnP is on, by the world. Explicit localhost binding is the fix, and it
   is a review rule, not a preference.
 - Baseline hardening: key-only SSH, no root login, `unattended-upgrades` for security patches,
   fail2ban. Done once, at the start.
@@ -1292,11 +1327,13 @@ Small, cheap, and each closes a hole that a solo project usually leaves open:
 - **Container scanning** with `trivy` on the built image, failing on high severity.
 - **Lockfile-only installs everywhere** — `uv sync --frozen` in CI and in the image, so the thing
   tested is the thing shipped.
-- **Least-privilege credentials, separated by role**: a pipeline token that can read and write the
-  raw bucket but not delete, a distinct backup token scoped to the backup bucket, a read-only token
-  for anything that only reads. Rotation is documented in the runbook with the blast radius of each
-  — for a solo project the realistic policy is "rotate on suspicion and on schedule annually",
-  written down rather than implied.
+- **Least-privilege credentials, separated by role.** On-premise there are far fewer of them, which
+  is a real security benefit and worth stating plainly: the only secrets in the daily path are
+  vendor API keys and the Telegram bot token, and none of them can destroy anything. The raw zone is
+  protected by the filesystem and by a port with no delete method rather than by a scoped token.
+  Vendor keys are read-only by nature. Rotation is documented in the runbook with the blast radius
+  of each — for a solo project the realistic policy is "rotate on suspicion and on schedule
+  annually", written down rather than implied.
 - **Never `pull_request_target`** in any workflow. It is the one GitHub Actions footgun that hands
   secrets to untrusted code, and it is the most common way a repository leaks a token.
 
@@ -1311,6 +1348,11 @@ dependency rule held, A1 and A2 are adapter swaps. If they did not, that is wort
 
 **Stated plainly: at 300k rows, none of this is required.** Each step is justified by what it
 teaches or proves, and any can be skipped without harming the working system.
+
+All of it stays on-premise except A5. MinIO, Redpanda, Postgres, Prometheus and Grafana are all
+self-hosted, so A1–A4, A6 and A7 sit on the same box and change nothing about where the data lives.
+A5 is the exception and is the step that would move the system off it — which is a further reason it
+stays `plan`-only.
 
 ```
   Stooq · FRED  ──▶ batch ingest ──┐
@@ -1369,6 +1411,9 @@ Cheap to add, and each addresses a failure mode a naive pipeline hits in product
 - **Per-instrument partitioning.** Adding the 40th ETF costs the same as adding the 4th.
 - **Single-writer discipline.** One read-write DuckDB connection ever; serving reads a promoted
   snapshot; a test asserts the API cannot acquire a write lock (§4.5).
+- **On-premise by default.** Data and compute stay on hardware the user owns; only vendor fetches
+  and the dead-man's-switch ping leave the network, and the machine accepts no inbound connections
+  (§11.1, §11.5).
 - **Reproducible backtests.** Keyed by `hash(strategy_ast + registry_commit + manifest + code_sha)`,
   with the AST persisted alongside.
 - **Decision-level idempotent alerts.** Unique on `(strategy_id, strategy_version, decision_id)`;
@@ -1403,10 +1448,11 @@ Cheap to add, and each addresses a failure mode a naive pipeline hits in product
   against the synthetic source (§11.4).
 - **Migrations on the operational store**, since it is the one piece of state a rebuild cannot
   recreate (§11.4).
-- **Backups offsite, encrypted, and restore-tested monthly in CI** — an untested restore is a hope
-  with a cron schedule (§11.3).
-- **Least-privilege credentials**: the pipeline's object-store token can read and write but not
-  delete (§11.7).
+- **Backups on separate hardware, encrypted, and restore-tested monthly** — an untested restore is a
+  hope with a cron schedule (§11.3).
+- **No code path can delete a raw partition**: the `ObjectStore` port has no delete method, which is
+  the on-premise equivalent of a delete-less credential and is enforced by the type system rather
+  than by a policy document (§11.3).
 - **Secret, dependency and image scanning in CI**, with `gitleaks` in both pre-commit and CI because
   pre-commit is bypassable (§11.7).
 - **Architecture decision records** in `docs/adr/` — the dependency rule; two stores rather than one;
@@ -1422,7 +1468,7 @@ Cheap to add, and each addresses a failure mode a naive pipeline hits in product
 
 | Dimension | MVP — Lean Warehouse | Extension — Lakehouse |
 |---|:---:|:---:|
-| Analytical storage | DuckDB file + Parquet in R2 | Delta Lake on S3/MinIO |
+| Analytical storage | DuckDB file + Parquet on local disk | Delta Lake on self-hosted MinIO |
 | Operational storage | SQLite | Postgres (A4 needs it for CDC) |
 | Compute | In-process Polars + one Spark benchmark | PySpark throughout |
 | Latency | End-of-day | Intraday streaming |
@@ -1496,9 +1542,9 @@ finflow/
 ├── instruments/               # THE REGISTRY — add an ETF here
 │   ├── equity_us.yml · commodities.yml · rates_credit.yml · macro.yml · universes.yml
 ├── deploy/
-│   ├── cloud-init.yaml        # the whole box, reproducibly
+│   ├── provision.sh           # the whole box, reproducibly
 │   ├── compose.prod.yml       # image tags, mem_limits, restart, log rotation — no behaviour
-│   ├── backup.sh              # VACUUM INTO → gzip → age → offsite bucket
+│   ├── backup.sh              # VACUUM INTO → gzip → age → second device
 │   └── smoke.sh               # post-deploy: synthetic run must produce a Decision
 ├── migrations/                # versioned ops-store migrations (the one non-rebuildable state)
 ├── docs/
