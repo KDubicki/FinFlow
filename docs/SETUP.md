@@ -12,6 +12,68 @@ the one that matters.
 
 ---
 
+## 0. Do these three things now  ⬅ start here
+
+Everything below this section is context. These three are the actions.
+
+### 0.1 Install the git hooks (one command, 30 seconds)
+
+```
+make install
+```
+
+The hooks are configured but **not installed in your clone**, which means
+`gitleaks` is not currently checking your commits for secrets, and nothing is
+stopping a commit straight to `main`. Both matter more now that there are real
+API keys in play.
+
+### 0.2 See the whole pipeline run, with no network and no keys
+
+```
+make backfill-offline     # synthetic source -> append-only raw zone
+make build                # raw -> bronze -> dbt -> marts -> serving snapshot
+make docs                 # browsable model lineage
+```
+
+That exercises every part of the path except the vendors themselves: the raw
+zone, the bronze resolution, the star schema with contracts enforced, and the
+serving snapshot. If this works, the machine is ready.
+
+To look at what came out:
+
+```
+uv run python -c "
+from finflow.adapters.warehouse import DuckDBWarehouse
+w = DuckDBWarehouse('data/serving.duckdb', read_only=True)
+print(w.query('SELECT * FROM fct_ohlcv_daily ORDER BY date DESC LIMIT 5'))
+"
+```
+
+### 0.3 Point the data and backup directories at real locations
+
+Add to `.env`:
+
+```
+FINFLOW_DATA_DIR=/srv/finflow/data
+FINFLOW_BACKUP_DIR=/mnt/backup/finflow
+```
+
+`FINFLOW_BACKUP_DIR` **must be on a different physical device** — an external
+disk, a NAS mount, a second internal drive. Not a folder next to the data.
+
+This is the one thing in the whole setup where getting it wrong is
+unrecoverable. The raw zone cannot be rebuilt from anything; the warehouse and
+every backtest are rebuilt *from it*. On a single machine, the failure that
+actually happens is the disk dying and taking the data and its "backup"
+together. Everything else in this project can be fixed after the fact. This
+cannot.
+
+The code side is done: `VACUUM INTO` snapshots of the ops store, verified before
+they overwrite anything, with the restore path exercised by a test rather than
+assumed. It just needs somewhere safe to write to.
+
+---
+
 ## 1. FRED API key — required for macro data
 
 The macro series (`DFII10`, `DTWEXBGS`, `VIXCLS`, and later CPI) come from the
