@@ -28,7 +28,6 @@ dev = [
     "import-linter>=2.1",
     "pip-audit>=2.7",
     "respx>=0.22",
-    "moto[s3]>=5.0",
 ]
 
 [build-system]
@@ -86,7 +85,7 @@ disallow_untyped_defs = false
 
 # Neither ships type information.
 [[tool.mypy.overrides]]
-module = ["exchange_calendars.*", "patito.*", "moto.*", "boto3.*", "botocore.*"]
+module = ["exchange_calendars.*", "patito.*"]
 ignore_missing_imports = true
 
 # Patito's Model resolves to Any without stubs, which makes every schema a

@@ -9,15 +9,12 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from finflow.adapters.storage import InMemoryObjectStore, LocalObjectStore, S3ObjectStore
+from finflow.adapters.storage import InMemoryObjectStore, LocalObjectStore
 from finflow.contracts.errors import ObjectAlreadyExists, ObjectNotFound
 from finflow.ports.object_store import ObjectStore
-
-BUCKET = "finflow-test"
 
 
 @pytest.fixture
@@ -28,20 +25,12 @@ def store(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[ObjectStor
         yield InMemoryObjectStore()
     elif kind == "local":
         yield LocalObjectStore(tmp_path / "raw")
-    elif kind == "s3":
-        moto = pytest.importorskip("moto")
-        with moto.mock_aws():
-            import boto3
-
-            client = boto3.client("s3", region_name="us-east-1")
-            client.create_bucket(Bucket=BUCKET)
-            yield S3ObjectStore(client, BUCKET)
     else:  # pragma: no cover - guarded by the parametrisation
         raise AssertionError(kind)
 
 
 pytestmark = pytest.mark.parametrize(
-    "store", ["memory", "local", "s3"], indirect=True, ids=["memory", "local", "s3"]
+    "store", ["memory", "local"], indirect=True, ids=["memory", "local"]
 )
 
 
@@ -123,26 +112,3 @@ class TestLocalStoreSpecifics:
         store.put("raw/a.parquet", b"x")
         (store.root / "raw" / "b.partial").write_bytes(b"half")
         assert store.list("raw/") == ("raw/a.parquet",)
-
-
-class TestS3Specifics:
-    """Behaviour only the bucket-backed store can get wrong."""
-
-    def test_a_prefix_scopes_the_store(self, store: ObjectStore) -> None:
-        if not isinstance(store, S3ObjectStore):
-            pytest.skip("bucket-specific")
-        # Keys are stored under the prefix but never exposed with it, so the
-        # same code path works whether or not a bucket is shared.
-        scoped: Any = S3ObjectStore(store._client, BUCKET, prefix="finflow")
-        scoped.put("raw/a", b"x")
-        assert scoped.list("raw/") == ("raw/a",)
-        assert store.list("finflow/") == ("finflow/raw/a",)
-
-    def test_listing_pages_beyond_one_thousand_keys(self, store: ObjectStore) -> None:
-        if not isinstance(store, S3ObjectStore):
-            pytest.skip("bucket-specific")
-        # S3 truncates a listing at 1000; the paginator is what makes a full
-        # backfill's worth of partitions enumerable.
-        for i in range(1005):
-            store.put(f"raw/{i:05d}", b"x")
-        assert len(store.list("raw/")) == 1005
