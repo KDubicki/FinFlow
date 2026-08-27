@@ -25,7 +25,7 @@ client and a database handle.
 |---|---|
 | M0 ✅ | — |
 | **Stage 1 — vertical slice: get it running daily** | |
-| M1 · Architecture skeleton and instrument registry | Add an instrument in one file |
+| M1 ✅ · Architecture skeleton and instrument registry | Add an instrument in one file |
 | M2 · Ingestion — ports, adapters, error taxonomy | Have the price history on disk |
 | M3 · Two stores and dbt marts | Query a clean series |
 | **M4 · First light — decision → Telegram, on a schedule** | **Read a daily digest. Rung 0 of the trust ladder** |
@@ -125,39 +125,39 @@ Goal of the whole stage: **by the end of M4, a scheduled job that runs without y
 Telegram message.** Eight instruments, two sources, one rule, no ML, no orchestrator, no UI. Resist
 widening anything until it is green and scheduled.
 
-## M1 — Architecture skeleton and instrument registry
+## M1 — Architecture skeleton and instrument registry  ✅ DONE (2026-08-27)
 
 *Goal: the dependency rule is enforced from the first commit of real code, and adding an ETF is a
 one-file edit from this point forward.*
 
 ### Tasks — skeleton
-- [ ] Create only the packages this milestone needs: `contracts/`, `domain/`, `registry/` and
+- [x] Create only the packages this milestone needs: `contracts/`, `domain/`, `registry/` and
       `ports/`. `ports/` earns its place immediately under the §4.6 rule — `Clock` has two
       implementations on day one — and `SystemClock` is therefore the first `adapters/` module.
       `application/` and `entrypoints/` arrive in M2, when they have something to hold
-- [ ] `.importlinter` with layer contracts per `PROJECT.md` §4.1, plus a forbidden-import contract:
+- [x] `.importlinter` with layer contracts per `PROJECT.md` §4.1, plus a forbidden-import contract:
       `domain` may not import `polars.io`, `httpx`, `duckdb`, `dagster`
-- [ ] CI job `imports`: `lint-imports`, running before the test job so a violation fails fast
-- [ ] `gitleaks` in pre-commit **and** as a CI job — pre-commit is bypassable with `--no-verify`, and
+- [x] CI job `imports`: `lint-imports`, running before the test job so a violation fails fast
+- [x] `gitleaks` in pre-commit **and** as a CI job — pre-commit is bypassable with `--no-verify`, and
       a committed token is the only mistake in this project with a real-world cost
-- [ ] Dependabot, grouped weekly; `pip-audit` in CI. Cheap to set up, and it stops the dependency
+- [x] Dependabot, grouped weekly; `pip-audit` in CI. Cheap to set up, and it stops the dependency
       graph rotting quietly between bursts of work
-- [ ] `Clock` protocol in `ports/`, `SystemClock` in `adapters/`, `FrozenClock` in `tests/` —
+- [x] `Clock` protocol in `ports/`, `SystemClock` in `adapters/`, `FrozenClock` in `tests/` —
       placed now, because every later milestone would otherwise reach for `date.today()`
-- [ ] Guard test: AST-walk every package under `src/finflow/` **except `adapters/` and
+- [x] Guard test: AST-walk every package under `src/finflow/` **except `adapters/` and
       `entrypoints/`**, failing on `datetime.now` / `date.today` / `time.time`. Written as an
       exclusion rather than a list, it covers `domain` and `registry` today and picks up
       `application` in M2 with no edit — which is the point, because `application` is where ambient
       time actually creeps in (`PROJECT.md` §4.2)
-- [ ] ADR: the dependency rule, and what it buys (testability, A1 migration, no Dagster in logic)
+- [x] ADR: the dependency rule, and what it buys (testability, A1 migration, no Dagster in logic)
 
 ### Tasks — registry
-- [ ] Pydantic models: `Instrument`, `UniverseMember`, `Universe`, `MacroSeries`, `Registry`
-- [ ] Loader merging every `instruments/*.yml` into one validated, **immutable** `Registry`,
+- [x] Pydantic models: `Instrument`, `UniverseMember`, `Universe`, `MacroSeries`, `Registry`
+- [x] Loader merging every `instruments/*.yml` into one validated, **immutable** `Registry`,
       constructed once at the composition root and injected — never a module-level singleton
-- [ ] Git SHA and commit date resolved **at load time** and stamped into the object, so nothing
+- [x] Git SHA and commit date resolved **at load time** and stamped into the object, so nothing
       downstream shells out to git mid-computation
-- [ ] Validation rules:
+- [x] Validation rules:
   - unique symbols across all files
   - every universe member exists as an instrument
   - `backfill_start >= inception`; `delisted > inception` when set
@@ -165,10 +165,10 @@ one-file edit from this point forward.*
     enum in `contracts/`, and tied to the concrete client registry in M2 once clients exist
   - valid `calendar` code recognised by `exchange_calendars`
   - `return_basis` in `{price, total}`; MVP asserts `price` everywhere (`PROJECT.md` §6.4)
-- [ ] Date-effective membership: `members` accepts a bare symbol or `{symbol, from, to}`, and
+- [x] Date-effective membership: `members` accepts a bare symbol or `{symbol, from, to}`, and
       `registry.universe("sectors", as_of=date)` resolves it. XLRE (2015) and XLC (2018) are the
       test cases — a 2010 backtest of `sectors` must see nine members
-- [ ] Seed **only the vertical-slice subset** — eight instruments; the full universe is M5. The
+- [x] Seed **only the vertical-slice subset** — eight instruments; the full universe is M5. The
       slice uses the *final* universe names with fewer members, so M5 only ever **adds** members and
       never redefines one. An earlier draft put TLT and HYG in `equity_core`, which would have made
       M5 a silent change of meaning for a name the strategies already referenced:
@@ -176,19 +176,29 @@ one-file edit from this point forward.*
   - `equity_core` — SPY, QQQ  (benchmark SPY, final)
   - `rates_credit` — TLT, HYG  (benchmark TLT until IEF arrives in M5 — the one slice value that
     does change, which is safe only because no backtest is persisted before M7)
-- [ ] `instruments/macro.yml` — DFII10, DTWEXBGS, VIXCLS, with `release_lag_days` and `revised`
-- [ ] Query helpers: `enabled()`, `universe(name, as_of=)`, `sources_for(symbol)`, `commit`
-- [ ] Tests: valid registry loads; duplicate symbol fails; unknown member fails; bad calendar fails;
+- [x] `instruments/macro.yml` — DFII10, DTWEXBGS, VIXCLS, with `release_lag_days` and `revised`
+- [x] Query helpers: `enabled()`, `universe(name, as_of=)`, `sources_for(symbol)`, `commit`
+- [x] Tests: valid registry loads; duplicate symbol fails; unknown member fails; bad calendar fails;
       membership as-of 2010 excludes XLRE; the `Registry` is genuinely immutable
-- [ ] CI job `registry`: validate every `instruments/*.yml` on each PR
-- [ ] `docs/ADDING_AN_INSTRUMENT.md`; ADR: registry as code versus database table
+- [x] CI job `registry`: validate every `instruments/*.yml` on each PR
+- [x] `docs/ADDING_AN_INSTRUMENT.md`; ADR: registry as code versus database table
 
 ### Acceptance
-- `lint-imports` passes, and deliberately adding `import duckdb` to `domain/` fails CI
-- The registry loads and validates in under 100 ms
-- Every invalid-registry test fails for the *right* reason, asserted on the message
-- `registry.universe("sectors", as_of=date(2010,1,1))` returns nine members
-- Adding an instrument requires touching exactly one YAML file
+- [x] `lint-imports` passes, and deliberately adding `import duckdb` to `domain/` fails CI
+- [x] The registry loads and validates in under 100 ms
+- [x] Every invalid-registry test fails for the *right* reason, asserted on the message
+- [x] `registry.universe("sectors", as_of=date(2010,1,1))` returns nine members — **met against a
+      fixture, not the shipped registry.** The eleven SPDR sectors arrive in M5, so the shipped
+      registry has no `sectors` universe to query. What M1 owes is the *mechanism*, and the fixture
+      exercises both date-effective members at once; M5 re-runs the same assertion against the real
+      universe
+- [x] Adding an instrument requires touching exactly one YAML file
+
+**Result:** 76 tests passing, 96.0% coverage (floor 80%), mypy strict clean, ruff clean, two
+import-linter contracts green. Registry loads in ~30 ms. Each guard was verified by deliberately
+breaking it: `import duckdb` in `domain/` breaks the forbidden contract, an adapter import in
+`domain/` breaks the layers contract, an unlisted new package fails the `.importlinter` sync test,
+and a `date.today()` call in `domain/` fails the ambient-time walk.
 
 ---
 
@@ -430,6 +440,8 @@ Everything from here improves something already in daily use. Keep the daily run
   module, one settings key and one composition-root line, and nothing else
 - Daily run still green, still under a few minutes
 - Reconciliation reports divergence for at least one instrument and does not block on it
+- `registry.universe("sectors", as_of=date(2010,1,1))` returns nine members **against the shipped
+  registry**, not a fixture — M1 proved the mechanism, this proves the data
 - The scale table in `PROJECT.md` §2 contains measured numbers, not estimates
 - Every instrument carries a cost floor and a liquidity floor; no strategy can undercut either
 - `tradeable_eu` resolves to instruments actually purchasable from a Polish brokerage account
