@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass, field
 
+import patito as pt
 import polars as pl
 
 from finflow.contracts.frames import RawMacro, RawOhlcv
@@ -130,7 +131,7 @@ class BuildWarehouse:
             return
 
         start, end = bars["date"].min(), bars["date"].max()
-        rows = []
+        rows: list[dict[str, object]] = []
         for calendar in sorted({i.calendar for i in self._registry.instruments}):
             rows.extend(
                 {"calendar": calendar, "date": day}
@@ -175,7 +176,7 @@ class BuildWarehouse:
         self._warehouse.unregister(staging)
 
 
-def _typed_empty(frame: pl.DataFrame, model: type) -> pl.DataFrame:
+def _typed_empty(frame: pl.DataFrame, model: type[pt.Model]) -> pl.DataFrame:
     """Give an empty frame the schema it would have had if there were rows.
 
     An empty result is normal -- no FRED key configured, no macro partitions
