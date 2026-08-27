@@ -84,11 +84,16 @@ def parse_raw_key(key: str) -> RawPartition:
     match = _KEY.match(key)
     if match is None:
         raise ValueError(f"not a raw partition key: {key!r}")
-    return RawPartition(
-        source=match["source"],
-        symbol=match["symbol"],
-        ingested_at=_parse_stamp(match["ingested"]),
-    )
+    try:
+        ingested_at = _parse_stamp(match["ingested"])
+    except ValueError:
+        # A key whose shape is right but whose stamp is not still has to fail
+        # with a message that names the key, not one about strptime formats.
+        raise ValueError(
+            f"not a raw partition key: {key!r} has an unparseable ingested stamp "
+            f"{match['ingested']!r}"
+        ) from None
+    return RawPartition(source=match["source"], symbol=match["symbol"], ingested_at=ingested_at)
 
 
 def manifest_key(run_id: str) -> str:

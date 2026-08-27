@@ -71,6 +71,28 @@ class RawMacro(MacroObservation):
     ingestion_run_id: str = pt.Field(min_length=1)
 
 
+def validate_frame(model: type[pt.Model], frame: pl.DataFrame) -> None:
+    """Validate ``frame`` against ``model``, with exactly one failure mode.
+
+    Patito raises ``DataFrameValidationError`` for a value that breaks a bound,
+    but a column of the *wrong dtype* surfaces as a Polars ``ComputeError``
+    instead — comparing a string to zero is a compute failure before it is a
+    validation one. Callers should not have to know that, and a caller that
+    catches only the first would let a half-parsed HTML page through, which is
+    the precise failure this schema exists to prevent.
+
+    Raises ``FrameContractError`` either way.
+    """
+    try:
+        model.validate(frame)
+    except Exception as exc:
+        raise FrameContractError(f"{model.__name__}: {exc}") from exc
+
+
+class FrameContractError(ValueError):
+    """A frame did not match its contract, for any reason."""
+
+
 def ohlcv_consistency_errors(frame: pl.DataFrame) -> list[str]:
     """Cross-column checks Patito's per-column rules cannot express.
 
