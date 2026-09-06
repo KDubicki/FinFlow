@@ -5,9 +5,16 @@
 # a decision made on 1 March using a number published on 10 April
 # (PROJECT.md §6.3).
 #
-# All three below are daily market-based series: published the next business
-# day and never restated, so none needs an ALFRED vintage read. The revised,
-# vintage-aware series (CPIAUCSL) arrives with the full universe.
+# The first five below are daily market-based series: published the next
+# business day and never restated, so none needs an ALFRED vintage read.
+#
+# CPIAUCSL is the exception and the reason `vintage_aware` exists. It is monthly,
+# published around the middle of the following month, and **revised afterwards**.
+# Reading today's value for March 2019 gives a number that was not knowable in
+# March 2019 and, worse, was not even the number people traded on in April. Its
+# release lag keeps it out of decisions made before publication; its vintage
+# flag is what makes a backtest read the print rather than the restatement
+# (PROJECT.md §6.3).
 
 series:
   - id: us10y_real
@@ -39,3 +46,42 @@ series:
     revised: false
     vintage_aware: false
     transform: [level, delta_5d, delta_20d]
+
+  - id: term_spread
+    source: fred
+    source_id: T10Y2Y
+    unit: percent
+    frequency: daily
+    release_lag_days: 1
+    revised: false
+    vintage_aware: false
+    # The classic recession signal, and a cheap one: FRED publishes the spread
+    # directly, so nothing here has to subtract two series and get the
+    # as-of-date alignment right by hand.
+    transform: [level, delta_5d, delta_20d]
+
+  - id: hy_oas
+    source: fred
+    source_id: BAMLH0A0HYM2
+    unit: percent
+    frequency: daily
+    release_lag_days: 1
+    revised: false
+    vintage_aware: false
+    # The tradeable counterpart is HYG minus LQD. Carrying both the spread and
+    # the funds is what allows a regime rule to be stated in terms of credit
+    # conditions while a position is expressed in something buyable.
+    transform: [level, delta_5d, delta_20d]
+
+  - id: cpi_headline
+    source: fred
+    source_id: CPIAUCSL
+    unit: index
+    frequency: monthly
+    # Published mid-month for the previous month. Fifteen days is the shortest
+    # honest lag; the release calendar varies by a few days and erring long is
+    # the direction that cannot leak.
+    release_lag_days: 15
+    revised: true
+    vintage_aware: true
+    transform: [level, yoy]

@@ -92,11 +92,17 @@ def _instruments(registry: Registry) -> pl.DataFrame:
                 "backfill_start": i.backfill_start,
                 "delisted": i.delisted,
                 "return_basis": str(i.return_basis),
-                "commission_bps": i.costs.commission_bps,
-                "spread_bps": i.costs.spread_bps,
+                # The *effective* floor: the instrument's own, or its asset
+                # class's default. The mart must never see "unspecified", or a
+                # backtest silently trades one instrument for free.
+                "commission_bps": i.cost_floor.commission_bps,
+                "spread_bps": i.cost_floor.spread_bps,
                 "min_adv_usd": i.min_adv_usd,
                 "ucits_equivalent": i.ucits_equivalent,
-                "tradeable_eu": i.ucits_equivalent is not None,
+                # The instrument's own answer, not "has an equivalent". Under
+                # PRIIPs, having a UCITS cousin does not make SPY purchasable
+                # from an EU account -- it names what to buy instead.
+                "tradeable_eu": i.tradeable_eu,
                 "enabled": i.enabled,
                 "primary_source": next(iter(i.sources), None),
                 "registry_commit": registry.commit.sha,

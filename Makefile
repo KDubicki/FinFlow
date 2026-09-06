@@ -2,7 +2,7 @@
 # Every target is safe to run repeatedly.
 
 .DEFAULT_GOAL := help
-.PHONY: help install lint format typecheck imports registry dialect audit test test-fast cov check clean test-live up down demo backfill backfill-offline build dbt-deps daily daily-dry backup restore-check docs
+.PHONY: help install lint format typecheck imports registry dialect audit test test-fast cov check clean test-live up down demo backfill backfill-offline build dbt-deps daily daily-dry backup restore-check scale verify-ucits docs
 
 PYTHON_VERSION := 3.12
 
@@ -86,6 +86,12 @@ backup:  ## Back up the ops store and mirror the raw zone to the second device
 
 restore-check:  ## Monthly drill: verify the newest backup restores. Changes nothing
 	uv run finflow-backup --check
+
+scale:  ## Measure rows, disk and rebuild time (PROJECT.md §2)
+	uv run python scripts/measure_scale.py $(ARGS)
+
+verify-ucits:  ## Check every UCITS mapping against its US original
+	uv run python scripts/verify_ucits_mapping.py $(ARGS)
 
 dbt-deps:  ## Install dbt packages from the committed lockfile
 	cd dbt && DBT_PROFILES_DIR=. uv run dbt deps

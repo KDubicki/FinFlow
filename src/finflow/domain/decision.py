@@ -49,6 +49,11 @@ class TargetPosition:
 
     symbol: str
     weight: float
+    buy_instead: str | None = None
+    """The UCITS line to buy in place of this one, when the target names a fund
+    an EU retail account cannot purchase (``PROJECT.md`` §5.7). Carried on the
+    position rather than looked up at delivery, so a message read six months
+    later still says what it meant at the time."""
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.weight <= 1.0:
@@ -57,7 +62,11 @@ class TargetPosition:
     def canonical(self) -> dict[str, Any]:
         """A stable rendering. Weights are rounded so that float noise from a
         different Polars version cannot change a decision id."""
-        return {"symbol": self.symbol, "weight": round(self.weight, 6)}
+        return {
+            "symbol": self.symbol,
+            "weight": round(self.weight, 6),
+            "buy_instead": self.buy_instead,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,7 +207,7 @@ class Decision:
             as_of=date.fromisoformat(str(payload["as_of"])),
             data_as_of=date.fromisoformat(str(data_as_of)) if data_as_of else None,
             positions=tuple(
-                TargetPosition(str(p["symbol"]), float(p["weight"]))
+                TargetPosition(str(p["symbol"]), float(p["weight"]), p.get("buy_instead"))
                 for p in payload.get("positions", [])
             ),
             withheld=tuple(

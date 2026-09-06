@@ -246,6 +246,7 @@ def _ingest(
             ops_store=ops,
             clock=clock,
             deferral=timedelta(hours=settings.rate_limit_deferral_hours),
+            request_budget=settings.source_daily_request_budget,
         ).run()
     except Exception as exc:
         state.record("ingest", FAILED, str(exc))

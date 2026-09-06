@@ -1,7 +1,13 @@
-# US equity index ETFs.
+# Broad equity beta, US-listed.
 #
 # Adding an instrument is an edit to this file and nothing else. See
 # docs/ADDING_AN_INSTRUMENT.md.
+#
+# None of these is purchasable from an EU retail account: under PRIIPs a
+# US-domiciled ETF publishes no KID, so the broker refuses the order however
+# liquid the fund is. `ucits_equivalent` names what to buy instead, and
+# `tradeable_eu` on those lines is what the live universe filters on
+# (PROJECT.md §5.7).
 
 instruments:
   - symbol: SPY
@@ -45,3 +51,66 @@ instruments:
     ucits_equivalent: EQQQ.UK
     enabled: true
     tags: [core]
+
+  - symbol: IWM
+    name: iShares Russell 2000 ETF
+    asset_class: equity
+    sub_class: us_small_cap
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2000-05-22
+    backfill_start: 2000-06-01
+    delisted: null
+    sources:
+      stooq: iwm.us
+      twelvedata: IWM
+    return_basis: price
+    distribution_yield_hint: 0.013
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 50_000_000
+    # A Russell 2000 UCITS line exists but tracks a different index family in
+    # practice; unverified, so left null rather than approximated.
+    ucits_equivalent: null
+    enabled: true
+    tags: [core, size_factor]
+
+  - symbol: EFA
+    name: iShares MSCI EAFE ETF
+    asset_class: equity
+    sub_class: developed_ex_us
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2001-08-14
+    backfill_start: 2001-09-04
+    delisted: null
+    sources:
+      stooq: efa.us
+    return_basis: price
+    distribution_yield_hint: 0.030
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 25_000_000
+    ucits_equivalent: null
+    enabled: true
+    tags: [core, geography]
+
+  - symbol: EEM
+    name: iShares MSCI Emerging Markets ETF
+    asset_class: equity
+    sub_class: emerging_markets
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2003-04-07
+    backfill_start: 2003-05-01
+    delisted: null
+    sources:
+      stooq: eem.us
+    return_basis: price
+    distribution_yield_hint: 0.025
+    costs: { commission_bps: 2, spread_bps: 3 }
+    min_adv_usd: 25_000_000
+    ucits_equivalent: EIMI.UK
+    enabled: true
+    tags: [core, geography]

@@ -15,6 +15,16 @@ vars:
   snapshot_id: "unpinned"
   registry_commit: "unknown"
 
+  # Cross-source divergence thresholds, in basis points, per asset class
+  # (PROJECT.md §6.6). Two quotes on SPY differing by 25 bps is a defect; two
+  # quotes on UNG differing by 25 bps is a Tuesday. One global number would
+  # either drown the equity signal or never fire on the commodities.
+  divergence_bps_equity: 25
+  divergence_bps_rates: 25
+  divergence_bps_currency: 25
+  divergence_bps_credit: 50
+  divergence_bps_commodity: 75
+
 models:
   finflow:
     staging:

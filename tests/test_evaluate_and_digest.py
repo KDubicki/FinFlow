@@ -29,7 +29,7 @@ from finflow.application.evaluate_strategies import (
 from finflow.domain.decision import Decision, TargetPosition
 from finflow.domain.drift import Action, compute_drift
 from finflow.domain.messages import FAILED, OK, Digest, Step, render_digest
-from finflow.domain.strategy import SMA_CROSS
+from finflow.domain.strategy import SMA_CROSS, Strategy
 from finflow.ports.ops_store import HOLD_SCOPE, ActualPosition, Control, ControlKind
 from finflow.registry import load_registry
 from finflow.registry.models import Registry
@@ -38,7 +38,10 @@ from tests.fakes import FrozenClock
 TODAY = dt.date(2026, 9, 6)
 NOW = dt.datetime(2026, 9, 6, 5, 30, tzinfo=dt.UTC)
 REGISTRY_DIR = Path(__file__).resolve().parents[1] / "instruments"
-UNIVERSE = ("GLD", "IAU", "SLV", "GDX")
+# The whole shipped universe, not a slice: a fixture that covered four of
+# seven members would report three withheld instruments in every digest and
+# quietly weaken every assertion below.
+UNIVERSE = ("GLD", "IAU", "SGOL", "SLV", "GDX", "GDXJ", "SIL")
 
 
 @pytest.fixture
@@ -85,8 +88,14 @@ class FakeWarehouse:
         return self._tables
 
 
-def bars(trend: dict[str, float], *, days: int = 120) -> pl.DataFrame:
-    """One rising or falling series per symbol, ending on TODAY."""
+def bars(trend: dict[str, float], *, days: int = 120, volume: float = 2_000_000.0) -> pl.DataFrame:
+    """One rising or falling series per symbol, ending on TODAY.
+
+    The default volume is comfortably above every liquidity floor in the shipped
+    registry. That matters: the gate is real, so a fixture with toy volumes
+    would gate the whole universe out and every assertion below would be
+    testing the gate by accident.
+    """
     rows = []
     for symbol, slope in trend.items():
         for i in range(days):
@@ -97,8 +106,11 @@ def bars(trend: dict[str, float], *, days: int = 120) -> pl.DataFrame:
                     "open": 100.0,
                     "high": 100.0,
                     "low": 100.0,
-                    "close": 100.0 + slope * i,
-                    "volume": 1_000.0,
+                    # Multiplicative, so a falling series stays positive: a
+                    # negative close is not a price, and the frame contract
+                    # would reject one from a real vendor.
+                    "close": 100.0 * (1.0 + slope * i / 200.0),
+                    "volume": volume,
                 }
             )
     return pl.DataFrame(rows)
@@ -183,6 +195,32 @@ class TestEvaluation:
         ops.set_control(Control(ControlKind.MUTE, "GLD", until=dt.date(2026, 9, 1), set_at=NOW))
         outcome = evaluate(ops, registry, bars(dict.fromkeys(UNIVERSE, 1.0)))
         assert "GLD" in [p.symbol for p in outcome.results[0].decision.positions]
+
+    def test_an_illiquid_instrument_is_gated_out_and_says_why(
+        self, ops: SqliteOpsStore, registry: Registry
+    ) -> None:
+        # PROJECT.md §5.7: below the floor, no signal is emitted that day. A
+        # target you cannot fill without moving the price is not a target.
+        thin = bars(dict.fromkeys(UNIVERSE, 1.0), volume=100.0)
+        outcome = evaluate(ops, registry, thin)
+        decision = outcome.results[0].decision
+
+        assert decision.is_flat
+        assert all("liquidity floor" in w.reason for w in decision.withheld)
+        # Named, not silently dropped.
+        assert {w.symbol for w in decision.withheld} == set(UNIVERSE)
+
+    def test_a_us_target_names_the_ucits_line_to_buy_instead(
+        self, ops: SqliteOpsStore, registry: Registry
+    ) -> None:
+        # Under PRIIPs an EU retail account cannot buy GLD. An instruction that
+        # does not say what to buy instead is one the reader cannot act on.
+        outcome = evaluate(ops, registry, bars(dict.fromkeys(UNIVERSE, 1.0)))
+        held = {p.symbol: p.buy_instead for p in outcome.results[0].decision.positions}
+        assert held["GLD"] == "IGLN.UK"
+        assert held["SLV"] == "SSLN.UK"
+        # No honest mapping exists for the miners, so none is invented.
+        assert held["GDX"] is None
 
     def test_a_missing_mart_refuses_to_decide(
         self, ops: SqliteOpsStore, registry: Registry
@@ -352,3 +390,59 @@ class TestDigest:
         digest = Digest(as_of=TODAY, run_id="r", steps=(Step("ingest", OK),))
         assert "Disk" not in render_digest(replace(digest, disk_used_pct=40.0))
         assert "Disk 81% full" in render_digest(replace(digest, disk_used_pct=81.0))
+
+
+class TestTheRegistryClaim:
+    """Widening the universe is a YAML edit and nothing else.
+
+    The most-repeated claim in ``PROJECT.md`` and the one M5 exists to test.
+    Asserted by running the *same* strategy machinery over every universe the
+    registry ships, with no per-universe code anywhere in the path.
+    """
+
+    @pytest.mark.parametrize(
+        "universe",
+        [
+            "precious_metals",
+            "equity_core",
+            "sectors",
+            "rates_credit",
+            "broad_commodities",
+            "cross_asset",
+            "tradeable_eu",
+        ],
+    )
+    def test_any_shipped_universe_can_be_evaluated_without_a_code_change(
+        self, ops: SqliteOpsStore, registry: Registry, universe: str
+    ) -> None:
+        members = [i.symbol for i in registry.universe(universe, TODAY)]
+        strategy = Strategy(id=f"sma_cross_{universe}", universe=universe, signal=SMA_CROSS.signal)
+
+        outcome = EvaluateStrategies(
+            warehouse=FakeWarehouse(bars(dict.fromkeys(members, 1.0), volume=5_000_000.0)),
+            ops_store=ops,
+            registry=registry,
+            clock=FrozenClock(NOW),
+            strategies=(strategy,),
+        ).run(run_id="run-1", snapshot_id="snap-1")
+
+        decision = outcome.results[0].decision
+        assert decision.evaluated == len(members)
+        assert {p.symbol for p in decision.positions} == set(members)
+
+    def test_the_eu_universe_needs_no_substitutions(
+        self, ops: SqliteOpsStore, registry: Registry
+    ) -> None:
+        # A strategy written against tradeable_eu produces a message with no
+        # "buy this instead" clutter, because everything in it is buyable.
+        members = [i.symbol for i in registry.universe("tradeable_eu", TODAY)]
+        strategy = Strategy(id="eu", universe="tradeable_eu", signal=SMA_CROSS.signal)
+        outcome = EvaluateStrategies(
+            warehouse=FakeWarehouse(bars(dict.fromkeys(members, 1.0), volume=5_000_000.0)),
+            ops_store=ops,
+            registry=registry,
+            clock=FrozenClock(NOW),
+            strategies=(strategy,),
+        ).run(run_id="run-1")
+
+        assert all(p.buy_instead is None for p in outcome.results[0].decision.positions)

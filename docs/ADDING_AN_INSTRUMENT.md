@@ -7,7 +7,8 @@ wrong with the design and that is worth stopping to investigate.
 ## The whole workflow
 
 1. Add an entry to the appropriate `instruments/*.yml` file — `equity_us.yml`,
-   `commodities.yml`, `rates_credit.yml`, or a new file if none fits.
+   `sectors.yml`, `commodities.yml`, `broad_commodities.yml`, `rates_credit.yml`,
+   `ucits.yml`, or a new file if none fits.
 2. Add it to any universe in `instruments/universes.yml` that should contain it.
 3. Run `make registry` to validate locally.
 4. Open a pull request. The `registry` job validates the schema; `make check`
@@ -33,9 +34,10 @@ instruments:
       twelvedata: SPY               # optional, reconciliation only
     return_basis: price             # price only, until a distributions source exists
     distribution_yield_hint: 0.013  # documentation only; flags price-return drag
-    costs: { commission_bps: 2, spread_bps: 1 }
+    costs: { commission_bps: 2, spread_bps: 1 }   # optional; see below
     min_adv_usd: 50_000_000         # below this, no signal is emitted that day
-    ucits_equivalent: CSPX.UK       # what an EU retail account can actually buy
+    ucits: false                    # true only for a line an EU account can buy
+    ucits_equivalent: CSPX.UK       # what to buy instead of this one
     enabled: true
     tags: [core, benchmark]
 ```
@@ -48,15 +50,35 @@ ETFs by five to ten times and manufactures alpha that cannot be earned
 (`PROJECT.md` §5.7). If you do not know an instrument's typical spread, look it
 up rather than copying SPY's.
 
-**`min_adv_usd`** is the floor below which no signal is emitted, not the fund's
-actual average volume. Set it conservatively; the current values are placeholders
-to be revisited once real volume is measured.
+The block is **optional**, and omitting it applies the asset-class default from
+`domain/costs.py` — which is deliberately pessimistic, so the cheap mistake is
+forgetting to be specific rather than forgetting to have costs at all. There is
+no way to register an instrument that trades for free.
 
-**`ucits_equivalent`** is what a Polish brokerage account can actually buy. Under
+**`min_adv_usd`** is the floor below which no signal is emitted, not the fund's
+actual average volume. It is a gate, not a preference: below it, the evaluator
+withholds the instrument for the day and the digest says why. Median dollar
+volume over the last twenty sessions is what it is compared against — median
+rather than mean, because one index-rebalance day should not lift a thin fund
+over the line for a month.
+
+**`ucits`** is true only when *this* line is purchasable from an EU retail
+account. It is stated, never inferred: the cost of getting it wrong is a target
+portfolio that cannot be executed (ADR 0012).
+
+**`ucits_equivalent`** names what to buy **instead of** this instrument. Under
 PRIIPs an EU retail investor generally cannot buy US-domiciled ETFs, so an
-instrument with no mapping is research-only. **Leave it `null` rather than
-guessing** — a wrong mapping produces a target portfolio that cannot be executed,
-which is worse than an honest gap.
+instrument with no mapping is research-only. It must name a registered
+instrument that is itself `ucits: true` — the registry refuses a mapping to a
+fund it does not ingest, because the digest would otherwise tell you to buy
+something nobody has checked. **Leave it `null` rather than guessing**, then run
+`make verify-ucits` before trusting one you added.
+
+**Date-effective universe membership.** A member of a universe may be written as
+`{ symbol: XLRE, from: 2015-10-08 }`, and membership is always resolved as of the
+*evaluation* date rather than today (`PROJECT.md` §5.3). Use it whenever a fund
+joined an index family later than its peers — otherwise a backtest of `sectors`
+starting in 2010 silently reads two funds that did not exist yet.
 
 **`enabled` and `delisted` are different things.** `enabled: false` is a choice
 and stops future ingestion. `delisted` is a fact and records that the fund ceased

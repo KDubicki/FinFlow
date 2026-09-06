@@ -16,6 +16,7 @@ from finflow.adapters.sources.fred import FredClient
 from finflow.adapters.sources.http import HttpFetcher, build_client
 from finflow.adapters.sources.stooq import StooqClient
 from finflow.adapters.sources.synthetic import SyntheticClient
+from finflow.adapters.sources.twelvedata import TwelveDataClient
 from finflow.adapters.storage import LocalObjectStore
 from finflow.config import Settings
 from finflow.contracts.sources import SourceKey
@@ -57,6 +58,21 @@ def build_sources(settings: Settings, *, offline: bool = False) -> dict[SourceKe
             base_url=settings.stooq_base_url,
         ),
     }
+
+    if settings.twelvedata_api_key is not None:
+        sources[SourceKey.TWELVEDATA] = TwelveDataClient(
+            HttpFetcher(
+                source=str(SourceKey.TWELVEDATA),
+                client=http,
+                bucket=TokenBucket(per_minute=settings.twelvedata_requests_per_minute),
+            ),
+            base_url=settings.twelvedata_base_url,
+            api_key=settings.twelvedata_api_key.get_secret_value(),
+        )
+    else:
+        log.warning(
+            "source_unavailable", source="twelvedata", reason="FINFLOW_TWELVEDATA_API_KEY not set"
+        )
 
     if settings.fred_api_key is not None:
         sources[SourceKey.FRED] = FredClient(

@@ -51,8 +51,19 @@ def shipped() -> Registry:
 
 
 def test_shipped_registry_loads(shipped: Registry) -> None:
-    assert shipped.symbols == ("GLD", "IAU", "SLV", "GDX", "SPY", "QQQ", "TLT", "HYG")
-    assert shipped.universe_names == ("precious_metals", "equity_core", "rates_credit")
+    # Counted rather than listed: the whole claim of M5 is that widening the
+    # universe is a YAML edit, and a test enumerating forty tickers would make
+    # it a two-file edit for no gain.
+    assert len(shipped.instruments) >= 40
+    assert set(shipped.universe_names) == {
+        "precious_metals",
+        "equity_core",
+        "sectors",
+        "rates_credit",
+        "broad_commodities",
+        "cross_asset",
+        "tradeable_eu",
+    }
 
 
 def test_shipped_registry_is_all_price_return(shipped: Registry) -> None:
@@ -63,7 +74,28 @@ def test_shipped_registry_is_all_price_return(shipped: Registry) -> None:
 def test_every_instrument_carries_a_cost_floor(shipped: Registry) -> None:
     # PROJECT.md §5.7: a strategy may raise these, never lower them, so an
     # instrument without one would silently get whatever a strategy asked for.
-    assert all(i.costs.commission_bps > 0 for i in shipped.instruments)
+    # `cost_floor` resolves to the asset-class default when the YAML omits the
+    # block, so there is no path to a zero-cost instrument.
+    for instrument in shipped.instruments:
+        assert instrument.cost_floor.commission_bps > 0
+        assert instrument.cost_floor.spread_bps > 0
+
+
+def test_thin_instruments_cost_more_than_liquid_ones(shipped: Registry) -> None:
+    # The specific failure PROJECT.md §5.7 names: a flat 3 bps across GDXJ, SIL,
+    # UNG and PDBC understates the round trip by 5-10x and manufactures alpha.
+    # Compared on the spread, which is the component the flat assumption gets
+    # wrong: commission is broker-side and roughly constant, while the spread
+    # is the instrument's own and varies by an order of magnitude across this
+    # universe.
+    liquid = shipped.instrument("SPY").cost_floor.spread_bps
+    for thin in ("GDXJ", "SIL", "UNG", "PDBC"):
+        assert shipped.instrument(thin).cost_floor.spread_bps >= liquid * 3
+
+
+def test_every_instrument_carries_a_liquidity_floor(shipped: Registry) -> None:
+    # A target you cannot fill without moving the price is not a target.
+    assert all(i.min_adv_usd and i.min_adv_usd > 0 for i in shipped.instruments)
 
 
 def test_shipped_registry_loads_well_under_100ms() -> None:
@@ -73,8 +105,14 @@ def test_shipped_registry_loads_well_under_100ms() -> None:
 
 
 def test_queries(shipped: Registry) -> None:
-    assert len(shipped.enabled()) == 8
-    assert [i.symbol for i in shipped.universe("equity_core")] == ["SPY", "QQQ"]
+    assert len(shipped.enabled()) == len(shipped.instruments)
+    assert [i.symbol for i in shipped.universe("equity_core")] == [
+        "SPY",
+        "QQQ",
+        "IWM",
+        "EFA",
+        "EEM",
+    ]
     assert shipped.sources_for("SPY")[SourceKey.STOOQ] == "spy.us"
     assert shipped.instrument("GLD").asset_class is AssetClass.COMMODITY
     assert shipped.macro_series("vix").source_id == "VIXCLS"
@@ -87,6 +125,69 @@ def test_unknown_lookups_name_what_is_available(shipped: Registry) -> None:
         shipped.universe("nope")
     with pytest.raises(RegistryValidationError, match=r"unknown macro series 'nope'.*vix"):
         shipped.macro_series("nope")
+
+
+# ---- Date-effective membership, against the shipped data ------------------
+
+
+def test_sectors_holds_nine_members_in_2010(shipped: Registry) -> None:
+    # The M5 acceptance criterion, asserted against the shipped registry rather
+    # than a fixture: M1 proved the mechanism, this proves the data. XLRE was
+    # carved out of financials in 2015 and XLC out of tech and discretionary in
+    # 2018; a backtest holding eleven throughout is reading two funds that did
+    # not exist, in exactly the sectors that were reorganised.
+    assert len(shipped.universe("sectors", date(2010, 1, 1))) == 9
+    assert len(shipped.universe("sectors", date(2016, 1, 1))) == 10
+    assert len(shipped.universe("sectors", date(2019, 1, 1))) == 11
+
+    assert "XLRE" not in [i.symbol for i in shipped.universe("sectors", date(2015, 10, 7))]
+    assert "XLRE" in [i.symbol for i in shipped.universe("sectors", date(2015, 10, 8))]
+
+
+# ---- Tradeability ---------------------------------------------------------
+
+
+def test_the_eu_universe_holds_only_lines_an_eu_account_can_buy(shipped: Registry) -> None:
+    # PRIIPs blocks US-domiciled ETFs for EU retail, so a target portfolio over
+    # SPY and TLT is research, not an instruction (PROJECT.md §5.7).
+    tradeable = {i.symbol for i in shipped.tradeable_eu()}
+    assert tradeable == {i.symbol for i in shipped.universe("tradeable_eu")}
+    assert "SPY" not in tradeable
+    assert "CSPX.UK" in tradeable
+
+
+def test_a_us_line_names_the_ucits_line_to_buy_instead(shipped: Registry) -> None:
+    assert shipped.ucits_line("SPY").symbol == "CSPX.UK"  # type: ignore[union-attr]
+    # Already tradeable: it is its own answer.
+    assert shipped.ucits_line("CSPX.UK").symbol == "CSPX.UK"  # type: ignore[union-attr]
+    # No honest mapping exists for the sectors, and inventing one would send
+    # the user to buy something nobody checked.
+    assert shipped.ucits_line("XLE") is None
+
+
+def test_a_ucits_mapping_must_name_a_registered_tradeable_line(tmp_path: Path) -> None:
+    body = VALID_INSTRUMENT.rstrip() + "\n    ucits_equivalent: NOTREAL.UK\n"
+    with pytest.raises(RegistryValidationError, match=r"not a registered instrument"):
+        load_registry(write(tmp_path, a=body))
+
+
+def test_a_ucits_mapping_to_a_non_ucits_line_is_refused(tmp_path: Path) -> None:
+    body = (
+        VALID_INSTRUMENT.rstrip()
+        + "\n    ucits_equivalent: SPY\n"
+        + """
+  - symbol: SPY
+    name: SPDR S&P 500
+    asset_class: equity
+    exchange: ARCA
+    calendar: XNYS
+    inception: 1993-01-22
+    backfill_start: 1993-02-01
+    sources: { stooq: spy.us }
+"""
+    )
+    with pytest.raises(RegistryValidationError, match=r"not marked"):
+        load_registry(write(tmp_path, a=body))
 
 
 # ---- Immutability ---------------------------------------------------------

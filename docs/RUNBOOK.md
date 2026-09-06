@@ -152,6 +152,48 @@ instruction is still current. Do not re-queue a stale rotation.
 
 ---
 
+## Backfilling the full universe
+
+The lesson of M5, written down because it costs days to relearn: **a
+forty-instrument backfill does not finish in one run, and it is not supposed
+to.** Stooq's per-IP cap is real, undocumented and hit well before forty
+instruments of twenty-year history have been fetched.
+
+What the system does about it, so you do not have to:
+
+1. Work is ordered **stalest first**. Whatever a run did not reach yesterday is
+   at the front today, so a partial run makes progress instead of re-fetching
+   the same first half of the registry every morning.
+2. A rate limit **defers the whole source**, not the one symbol. The cap is per
+   vendor, so continuing would spend the remaining budget on refusals.
+3. `deferred_until` is persisted, so the next run resumes rather than restarting.
+4. `FINFLOW_SOURCE_DAILY_REQUEST_BUDGET` stops the run *before* the vendor does.
+   A run that spends its last call being refused has learned nothing and may
+   have earned a block.
+
+So the procedure is: start it, let the timer run, and check progress after a few
+days.
+
+```bash
+make backfill                       # or let the daily timer do it incrementally
+sqlite3 data/ops.sqlite \
+  "select source, count(*), min(last_loaded_date), max(last_run_at)
+     from watermarks group by source"
+```
+
+**What "stuck" looks like, and what it usually is.** If `max(last_run_at)` is
+current but `min(last_loaded_date)` has not moved in three days, the run is
+reaching the vendor and being refused. Check the digest for a deferred source,
+then lower `FINFLOW_STOOQ_REQUESTS_PER_MINUTE` before raising anything else.
+Nothing is lost by going slower; a block costs days.
+
+If Stooq stays gated, promote Twelve Data: set `FINFLOW_TWELVEDATA_API_KEY` and
+the client is wired automatically. Its 800 calls a day is comfortable for a
+daily run and slow but workable for a backfill, which is exactly what
+`deferred_until` was built for.
+
+---
+
 ## The bot
 
 Commands are applied at the **start of the next scheduled run** — this is a

@@ -1,7 +1,13 @@
 # Precious metals: the metal itself and the miners.
 #
 # Physically backed metal trusts distribute nothing, so price return is total
-# return here and PROJECT.md §6.4's bias does not apply to this file.
+# return here and PROJECT.md §6.4's bias does not apply to the metal lines. The
+# miners do distribute, modestly, and carry the usual price-return drag.
+#
+# The spreads widen sharply down the list. GLD trades at a basis point; GDXJ and
+# SIL do not, and a flat assumption across the file would understate their round
+# trip by five to ten times and manufacture alpha (PROJECT.md §5.7). That is why
+# every line states its own floor rather than inheriting the asset-class default.
 
 instruments:
   - symbol: GLD
@@ -21,7 +27,7 @@ instruments:
     distribution_yield_hint: 0.0
     costs: { commission_bps: 2, spread_bps: 2 }
     min_adv_usd: 50_000_000
-    ucits_equivalent: SGLN.UK
+    ucits_equivalent: IGLN.UK
     enabled: true
     tags: [core, benchmark]
 
@@ -37,6 +43,7 @@ instruments:
     delisted: null
     sources:
       stooq: iau.us
+      twelvedata: IAU
     return_basis: price
     distribution_yield_hint: 0.0
     costs: { commission_bps: 2, spread_bps: 2 }
@@ -44,6 +51,29 @@ instruments:
     ucits_equivalent: IGLN.UK
     enabled: true
     tags: []
+
+  - symbol: SGOL
+    name: abrdn Physical Gold Shares ETF
+    asset_class: commodity
+    sub_class: precious_metals
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2009-09-09
+    backfill_start: 2009-10-01
+    delisted: null
+    sources:
+      stooq: sgol.us
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 3 }
+    min_adv_usd: 2_000_000
+    ucits_equivalent: IGLN.UK
+    enabled: true
+    # Three gold trusts in one universe is deliberate: they track the same metal
+    # through different structures, which is what makes them a check on each
+    # other's data quality rather than three bets.
+    tags: [gold_proxy]
 
   - symbol: SLV
     name: iShares Silver Trust
@@ -57,6 +87,7 @@ instruments:
     delisted: null
     sources:
       stooq: slv.us
+      twelvedata: SLV
     return_basis: price
     distribution_yield_hint: 0.0
     costs: { commission_bps: 2, spread_bps: 3 }
@@ -77,13 +108,57 @@ instruments:
     delisted: null
     sources:
       stooq: gdx.us
+      twelvedata: GDX
     return_basis: price
     distribution_yield_hint: 0.015
     costs: { commission_bps: 2, spread_bps: 4 }
     min_adv_usd: 25_000_000
     # A VanEck Gold Miners UCITS ETF exists, but its Stooq symbol is unverified.
-    # Left null rather than guessed: M5 verifies every mapping against the US
-    # original before anything is filtered to tradeable_eu.
+    # Left null rather than guessed: an unverified mapping is worse than an
+    # absent one, because the digest would tell you to buy something nobody has
+    # checked exists.
     ucits_equivalent: null
     enabled: true
     tags: [equity_proxy]
+
+  - symbol: GDXJ
+    name: VanEck Junior Gold Miners ETF
+    asset_class: equity
+    sub_class: gold_miners
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2009-11-10
+    backfill_start: 2009-12-01
+    delisted: null
+    sources:
+      stooq: gdxj.us
+    return_basis: price
+    distribution_yield_hint: 0.02
+    # The instrument PROJECT.md §5.7 names by name: a flat 3 bps here
+    # manufactures several percent a year of return that cannot be earned.
+    costs: { commission_bps: 2, spread_bps: 8 }
+    min_adv_usd: 5_000_000
+    ucits_equivalent: null
+    enabled: true
+    tags: [equity_proxy, thin]
+
+  - symbol: SIL
+    name: Global X Silver Miners ETF
+    asset_class: equity
+    sub_class: silver_miners
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2010-04-19
+    backfill_start: 2010-05-03
+    delisted: null
+    sources:
+      stooq: sil.us
+    return_basis: price
+    distribution_yield_hint: 0.02
+    costs: { commission_bps: 2, spread_bps: 10 }
+    min_adv_usd: 2_000_000
+    ucits_equivalent: null
+    enabled: true
+    tags: [equity_proxy, thin]
