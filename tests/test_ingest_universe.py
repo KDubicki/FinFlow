@@ -8,14 +8,18 @@ re-fetch must land beside the old data rather than on top of it.
 
 from __future__ import annotations
 
+import datetime as dt
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import httpx
 import polars as pl
 import pytest
 
 from finflow.adapters.ops.sqlite import SqliteOpsStore
+from finflow.adapters.sources.http import HttpFetcher
 from finflow.adapters.sources.synthetic import SyntheticClient
+from finflow.adapters.sources.twelvedata import TwelveDataClient
 from finflow.adapters.storage import InMemoryObjectStore
 from finflow.application.ingest_universe import IngestUniverse
 from finflow.contracts.errors import (
@@ -27,6 +31,7 @@ from finflow.contracts.errors import (
 )
 from finflow.contracts.sources import SourceKey
 from finflow.domain.layout import parse_raw_key, raw_prefix
+from finflow.ports.ops_store import Watermark
 from finflow.ports.source import SourceCapabilities
 from finflow.registry import load_registry
 from finflow.registry.models import Registry
@@ -34,6 +39,20 @@ from tests.fakes import FrozenClock
 
 NOW = datetime(2026, 8, 27, 5, 12, tzinfo=UTC)
 REGISTRY_DIR = Path(__file__).resolve().parents[1] / "instruments"
+
+
+class CountingClient:
+    """A healthy client that records how many calls it received."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def capabilities(self) -> object:
+        return SyntheticClient(seed=0).capabilities()
+
+    def fetch(self, symbol: str, start: dt.date, end: dt.date) -> object:
+        self.calls += 1
+        return SyntheticClient(seed=0).fetch(symbol, start, end)
 
 
 class FailingClient:
@@ -339,3 +358,96 @@ class TestIncrementalRuns:
         outcome = use_case.run(symbols=["GLD"])
         assert outcome.failed == {}
         assert "stooq:GLD" in outcome.skipped
+
+
+class TestBudgetingAcrossAWideUniverse:
+    """Forty instruments against an undocumented per-IP cap (PROJECT.md §6.7).
+
+    The failure this guards against is not a crash. It is a run that quietly
+    re-fetches the same first half of the registry every morning while the tail
+    never updates — which looks like a flaky vendor and is actually a loop
+    starting at the same place every day.
+    """
+
+    def test_the_stalest_pair_is_fetched_first(
+        self, registry: Registry, ops: SqliteOpsStore
+    ) -> None:
+        # Everything has been fetched today except one instrument, which was
+        # last seen a week ago. It goes first, whatever the file order says.
+        for instrument in registry.enabled():
+            for source in instrument.sources:
+                ops.save_watermark(
+                    Watermark(source=source, symbol=instrument.symbol, last_run_at=NOW)
+                )
+        stale = registry.enabled()[-1]
+        ops.save_watermark(
+            Watermark(
+                source=SourceKey.STOOQ,
+                symbol=stale.symbol,
+                last_run_at=NOW - dt.timedelta(days=7),
+            )
+        )
+
+        use_case, _ = build(registry, ops, SyntheticClient(seed=1))
+        order = use_case._work_order(list(registry.enabled()))
+        assert (order[0][0].symbol, order[0][1]) == (stale.symbol, SourceKey.STOOQ)
+
+    def test_an_instrument_never_fetched_outranks_a_stale_one(
+        self, registry: Registry, ops: SqliteOpsStore
+    ) -> None:
+        for instrument in registry.enabled():
+            for source in instrument.sources:
+                ops.save_watermark(
+                    Watermark(source=source, symbol=instrument.symbol, last_run_at=NOW)
+                )
+        newcomer = registry.enabled()[3]
+        ops.save_watermark(Watermark(source=SourceKey.STOOQ, symbol=newcomer.symbol))
+
+        use_case, _ = build(registry, ops, SyntheticClient(seed=1))
+        order = use_case._work_order(list(registry.enabled()))
+        assert order[0][0].symbol == newcomer.symbol
+
+    def test_the_order_is_deterministic_when_nothing_has_been_fetched(
+        self, registry: Registry, ops: SqliteOpsStore
+    ) -> None:
+        use_case, _ = build(registry, ops, SyntheticClient(seed=1))
+        first = [(i.symbol, str(k)) for i, k, _ in use_case._work_order(list(registry.enabled()))]
+        second = [(i.symbol, str(k)) for i, k, _ in use_case._work_order(list(registry.enabled()))]
+        assert first == second
+
+    def test_a_budget_stops_the_run_before_the_vendor_does(
+        self, registry: Registry, ops: SqliteOpsStore
+    ) -> None:
+        # A run that spends its last call being refused has learned nothing and
+        # may have earned a block. One that stops at its own budget resumes
+        # tomorrow from the same watermark.
+        counter = CountingClient()
+        use_case, _ = build(registry, ops, counter, request_budget=3)
+        outcome = use_case.run()
+
+        assert counter.calls == 3
+        assert any("budget exhausted" in reason for reason in outcome.skipped.values())
+
+    def test_what_the_budget_skipped_is_deferred_so_tomorrow_starts_there(
+        self, registry: Registry, ops: SqliteOpsStore
+    ) -> None:
+        use_case, _ = build(registry, ops, CountingClient(), request_budget=2)
+        use_case.run()
+
+        deferred = [w for w in ops.watermarks() if w.deferred_until is not None]
+        assert deferred, "a pair skipped for budget must be deferred, not silently dropped"
+
+    def test_a_documented_vendor_quota_caps_a_looser_configured_budget(
+        self, registry: Registry, ops: SqliteOpsStore
+    ) -> None:
+        # Twelve Data publishes 800 calls a day; Stooq publishes nothing, which
+        # means unknown rather than unlimited.
+        use_case, _ = build(registry, ops, CountingClient(), request_budget=10_000)
+        twelvedata = TwelveDataClient(
+            HttpFetcher(source="twelvedata", client=httpx.Client()),
+            base_url="https://twelvedata.test",
+            api_key="k",
+        )
+        assert use_case._budget_for(twelvedata) == 800
+        # Stooq documents nothing, so only the configured budget applies.
+        assert use_case._budget_for(SyntheticClient(seed=0)) == 10_000

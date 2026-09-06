@@ -1,0 +1,178 @@
+# The lines an EU retail account can actually buy.
+#
+# Under PRIIPs a US-domiciled ETF publishes no KID, so a Polish brokerage
+# account cannot buy SPY, GLD, TLT or any of the SPDR sectors however liquid
+# they are. Without this file the system computes target portfolios that cannot
+# be executed — which is not a rounding error in the research, it is the
+# difference between a system and a simulation (PROJECT.md §5.7).
+#
+# Every line here is `ucits: true`, which is what `tradeable_eu` filters on. The
+# US lines point at these through `ucits_equivalent`, and the registry refuses a
+# mapping to a fund it does not ingest: telling someone to buy CSPX.UK while
+# holding no price history for it is advice nobody can check.
+#
+# **Two honest caveats, both measurable rather than hand-waved.**
+#
+# 1. *The `.uk` vendor symbols are unverified against Stooq.* If a symbol is
+#    wrong, ingestion raises `SymbolNotFound` for that instrument and only that
+#    instrument — the failure domain is the instrument (PROJECT.md §4.4) — and
+#    it appears in the digest by name. That is the intended way to find out,
+#    and it beats shipping the entries disabled where nobody would look.
+# 2. *These are not the same funds.* They track the same indices with different
+#    domiciles, currencies, share classes and, critically, **much shorter
+#    histories and thinner volume**. `scripts/verify_ucits_mapping.py` measures
+#    return correlation, tracking difference and history length against the US
+#    original, and `docs/RESULTS.md` reports what it found. A mapping that has
+#    not been measured is a guess wearing a ticker.
+
+instruments:
+  - symbol: CSPX.UK
+    name: iShares Core S&P 500 UCITS ETF (Acc)
+    asset_class: equity
+    sub_class: us_large_cap
+    exchange: XLON
+    currency: USD
+    calendar: XLON
+    inception: 2010-05-19
+    backfill_start: 2010-06-01
+    delisted: null
+    sources:
+      stooq: cspx.uk
+    return_basis: price
+    # Accumulating: distributions are reinvested inside the fund, so the price
+    # series *is* total return. The one place in this registry where the
+    # price-return bias of §6.4 genuinely does not apply — and a reason the
+    # tracking difference against SPY will look like a drift rather than noise.
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 3 }
+    min_adv_usd: 1_000_000
+    ucits: true
+    enabled: true
+    tags: [tradeable_eu, accumulating]
+
+  - symbol: EQQQ.UK
+    name: Invesco EQQQ Nasdaq-100 UCITS ETF
+    asset_class: equity
+    sub_class: us_large_cap_growth
+    exchange: XLON
+    currency: USD
+    calendar: XLON
+    inception: 2002-12-11
+    backfill_start: 2003-01-02
+    delisted: null
+    sources:
+      stooq: eqqq.uk
+    return_basis: price
+    distribution_yield_hint: 0.005
+    costs: { commission_bps: 2, spread_bps: 4 }
+    min_adv_usd: 1_000_000
+    ucits: true
+    enabled: true
+    tags: [tradeable_eu]
+
+  - symbol: EIMI.UK
+    name: iShares Core MSCI EM IMI UCITS ETF (Acc)
+    asset_class: equity
+    sub_class: emerging_markets
+    exchange: XLON
+    currency: USD
+    calendar: XLON
+    inception: 2014-05-30
+    backfill_start: 2014-07-01
+    delisted: null
+    sources:
+      stooq: eimi.uk
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 4 }
+    min_adv_usd: 1_000_000
+    ucits: true
+    enabled: true
+    tags: [tradeable_eu, accumulating]
+
+  - symbol: IGLN.UK
+    name: iShares Physical Gold ETC (USD)
+    asset_class: commodity
+    sub_class: precious_metals
+    exchange: XLON
+    currency: USD
+    calendar: XLON
+    inception: 2011-04-11
+    backfill_start: 2011-05-03
+    delisted: null
+    sources:
+      stooq: igln.uk
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 4 }
+    min_adv_usd: 1_000_000
+    ucits: true
+    enabled: true
+    # An ETC, not a UCITS fund: physically backed debt securities are exempt
+    # from the PRIIPs KID requirement in the same practical way, which is why
+    # an EU account can buy them. The flag name is `ucits` because that is what
+    # the filter means to the user -- "my broker will let me".
+    tags: [tradeable_eu, etc]
+
+  - symbol: SSLN.UK
+    name: iShares Physical Silver ETC
+    asset_class: commodity
+    sub_class: precious_metals
+    exchange: XLON
+    currency: USD
+    calendar: XLON
+    inception: 2011-04-11
+    backfill_start: 2011-05-03
+    delisted: null
+    sources:
+      stooq: ssln.uk
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 6 }
+    min_adv_usd: 500_000
+    ucits: true
+    enabled: true
+    tags: [tradeable_eu, etc]
+
+  - symbol: DTLA.UK
+    name: iShares $ Treasury Bond 20+yr UCITS ETF (Acc)
+    asset_class: rates
+    sub_class: us_treasury_long
+    exchange: XLON
+    currency: USD
+    calendar: XLON
+    inception: 2015-12-04
+    backfill_start: 2016-01-04
+    delisted: null
+    sources:
+      stooq: dtla.uk
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 5 }
+    min_adv_usd: 500_000
+    ucits: true
+    enabled: true
+    # Accumulating, against TLT's 3.8% distribution. Over a ten-year backtest
+    # that difference is larger than most of the edges this system is looking
+    # for, so the two series are never compared without saying so.
+    tags: [tradeable_eu, accumulating]
+
+  - symbol: IHYU.UK
+    name: iShares $ High Yield Corp Bond UCITS ETF
+    asset_class: credit
+    sub_class: us_high_yield
+    exchange: XLON
+    currency: USD
+    calendar: XLON
+    inception: 2011-05-20
+    backfill_start: 2011-06-01
+    delisted: null
+    sources:
+      stooq: ihyu.uk
+    return_basis: price
+    distribution_yield_hint: 0.060
+    costs: { commission_bps: 2, spread_bps: 6 }
+    min_adv_usd: 500_000
+    ucits: true
+    enabled: true
+    tags: [tradeable_eu]

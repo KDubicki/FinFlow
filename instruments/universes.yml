@@ -3,29 +3,72 @@
 # Strategies and cross-sectional models reference a universe, never a hard-coded
 # list, so extending a universe extends everything built on it.
 #
-# These are the final universe *names* holding a subset of their final members:
-# widening the universe only ever adds members, so no name silently changes
-# meaning under a strategy that already references it.
-#
 # Membership may be date-effective — a member may be written as
 # `{ symbol: XLRE, from: 2015-10-08 }` — and is always resolved as of the
-# evaluation date, never as of today (PROJECT.md §5.3).
+# evaluation date, never as of today (PROJECT.md §5.3). `sectors` is where that
+# earns its keep: it holds nine members in 2010, ten from October 2015 and
+# eleven from June 2018, and a backtest that held eleven throughout would be
+# quietly reading two funds that did not exist.
+#
+# `tradeable_eu` is the one universe that is not a research grouping. It is what
+# an EU retail account can actually buy, and it is deliberately shorter and
+# shallower than the research universes — that gap is a fact about the product,
+# not a gap in the data (PROJECT.md §5.7).
 
 universes:
   precious_metals:
     description: Gold and silver, metal and miners
-    members: [GLD, IAU, SLV, GDX]
+    members: [GLD, IAU, SGOL, SLV, GDX, GDXJ, SIL]
     benchmark: GLD
 
   equity_core:
-    description: Broad US equity beta
-    members: [SPY, QQQ]
+    description: Broad equity beta across size and geography
+    members: [SPY, QQQ, IWM, EFA, EEM]
+    benchmark: SPY
+
+  sectors:
+    description: The eleven Select Sector SPDRs, date-effective
+    members:
+      - XLB
+      - XLE
+      - XLF
+      - XLI
+      - XLK
+      - XLP
+      - XLU
+      - XLV
+      - XLY
+      # Carved out of financials on 2015-10-08 and out of technology and
+      # discretionary on 2018-06-19. Both dates are the first trading day, not
+      # the fund's inception: membership starts when the sector could actually
+      # be held.
+      - { symbol: XLRE, from: 2015-10-08 }
+      - { symbol: XLC, from: 2018-06-19 }
     benchmark: SPY
 
   rates_credit:
-    description: Duration and credit risk
-    # IEF is the final benchmark for this universe; it is not yet registered, so
-    # TLT stands in. Safe only because nothing persists a backtest yet — once
-    # runs are stored, a benchmark change is a new strategy version.
-    members: [TLT, HYG]
+    description: Duration, inflation and credit risk
+    # IEF is the final benchmark for this universe; TLT stands in until the
+    # relative-value strategies that need a middle-of-the-curve reference
+    # actually exist. Safe only while nothing persists a backtest — once runs
+    # are stored, a benchmark change is a new strategy version.
+    members: [SHY, IEF, TLT, TIP, LQD, HYG]
     benchmark: TLT
+
+  broad_commodities:
+    description: Diversified commodity exposure and its roll cost
+    members: [DBC, PDBC, USO, UNG, DBA]
+    benchmark: DBC
+
+  cross_asset:
+    description: One liquid representative per asset class, for regime work
+    # Six instruments spanning equity, duration, credit, metal, broad
+    # commodities and the dollar. Small on purpose: a regime model over forty
+    # correlated funds is a model of the correlation, not of the regime.
+    members: [SPY, TLT, HYG, GLD, DBC, UUP]
+    benchmark: SPY
+
+  tradeable_eu:
+    description: What a Polish brokerage account can actually buy, under PRIIPs
+    members: [CSPX.UK, EQQQ.UK, EIMI.UK, IGLN.UK, SSLN.UK, DTLA.UK, IHYU.UK]
+    benchmark: CSPX.UK

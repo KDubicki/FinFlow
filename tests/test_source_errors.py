@@ -17,6 +17,7 @@ import respx
 from finflow.adapters.sources.fred import FredClient
 from finflow.adapters.sources.http import HttpFetcher
 from finflow.adapters.sources.stooq import StooqClient
+from finflow.adapters.sources.twelvedata import TwelveDataClient
 from finflow.contracts.errors import (
     AuthenticationFailed,
     MalformedResponse,
@@ -28,6 +29,7 @@ from finflow.domain.retry import policy_for
 
 STOOQ_URL = "https://stooq.test/q/d/l/"
 FRED_URL = "https://fred.test/fred"
+TWELVEDATA_URL = "https://twelvedata.test"
 FIXTURES = Path(__file__).parent / "fixtures"
 START, END = __import__("datetime").date(2024, 1, 2), __import__("datetime").date(2024, 1, 5)
 
@@ -35,6 +37,14 @@ START, END = __import__("datetime").date(2024, 1, 2), __import__("datetime").dat
 def stooq(mock: respx.MockRouter) -> StooqClient:
     return StooqClient(
         HttpFetcher(source="stooq", client=httpx.Client(timeout=5.0)), base_url=STOOQ_URL
+    )
+
+
+def twelvedata(mock: respx.MockRouter) -> TwelveDataClient:
+    return TwelveDataClient(
+        HttpFetcher(source="twelvedata", client=httpx.Client(timeout=5.0)),
+        base_url=TWELVEDATA_URL,
+        api_key="k",
     )
 
 
@@ -214,3 +224,106 @@ class TestFredErrors:
         route = respx.get(url__startswith=FRED_URL).respond(200, json={"observations": []})
         fred(respx.mock).fetch("DFII10", START, END)
         assert "realtime_start" not in route.calls.last.request.url.params
+
+
+class TestTwelveDataErrorsArriveWithHttp200:
+    """The same trap as Stooq's block page, in a different wrapper.
+
+    Twelve Data reports a blown quota, a bad key and an unknown symbol as a
+    **JSON object with a 200 status line**. A client that trusts the status code
+    hands `{"code": 429}` to a parser and either crashes at 05:30 or, worse,
+    returns an empty frame that looks like a quiet day.
+    """
+
+    def _error(self, code: int, message: str) -> dict[str, object]:
+        return {"code": code, "message": message, "status": "error"}
+
+    @respx.mock
+    def test_a_blown_quota_is_a_rate_limit_not_a_parse_failure(self) -> None:
+        respx.get(url__startswith=TWELVEDATA_URL).respond(
+            200, json=self._error(429, "You have run out of API credits")
+        )
+        with pytest.raises(SourceRateLimited, match="quota exhausted"):
+            twelvedata(respx.mock).fetch("SPY", START, END)
+
+    @respx.mock
+    def test_a_rate_limit_defers_the_whole_source(self) -> None:
+        # The policy, not the client, decides this -- but it is worth asserting
+        # here because the point of mapping onto the taxonomy is that the
+        # ingestion service then does the right thing without knowing the vendor.
+        respx.get(url__startswith=TWELVEDATA_URL).respond(
+            200, json=self._error(429, "out of credits")
+        )
+        with pytest.raises(SourceRateLimited) as caught:
+            twelvedata(respx.mock).fetch("SPY", START, END)
+        assert policy_for(caught.value).defer_source
+
+    @respx.mock
+    def test_a_rejected_key_fails_the_run(self) -> None:
+        respx.get(url__startswith=TWELVEDATA_URL).respond(
+            200, json=self._error(401, "Invalid API key")
+        )
+        with pytest.raises(AuthenticationFailed):
+            twelvedata(respx.mock).fetch("SPY", START, END)
+
+    @respx.mock
+    def test_an_unknown_symbol_is_a_registry_incident(self) -> None:
+        respx.get(url__startswith=TWELVEDATA_URL).respond(
+            200, json=self._error(404, "symbol not found: NOPE")
+        )
+        with pytest.raises(SymbolNotFound) as caught:
+            twelvedata(respx.mock).fetch("NOPE", START, END)
+        assert policy_for(caught.value).registry_incident
+
+    @respx.mock
+    def test_a_vendor_outage_is_retryable(self) -> None:
+        respx.get(url__startswith=TWELVEDATA_URL).respond(
+            200, json=self._error(500, "internal error")
+        )
+        with pytest.raises(SourceUnavailable) as caught:
+            twelvedata(respx.mock).fetch("SPY", START, END)
+        assert policy_for(caught.value).attempts > 0
+
+    @respx.mock
+    def test_a_missing_column_is_malformed_rather_than_an_empty_frame(self) -> None:
+        respx.get(url__startswith=TWELVEDATA_URL).respond(
+            200,
+            json={"status": "ok", "values": [{"datetime": "2024-01-02", "close": "1.0"}]},
+        )
+        with pytest.raises(MalformedResponse, match="missing column"):
+            twelvedata(respx.mock).fetch("SPY", START, END)
+
+    @respx.mock
+    def test_a_non_numeric_price_fails_the_contract(self) -> None:
+        # The failure this catches is a vendor that starts sending "N/A" for a
+        # halted instrument. Cast strictly, or it becomes a null close and the
+        # rule reads it as a gap.
+        respx.get(url__startswith=TWELVEDATA_URL).respond(
+            200,
+            json={
+                "status": "ok",
+                "values": [
+                    {
+                        "datetime": "2024-01-02",
+                        "open": "1.0",
+                        "high": "1.0",
+                        "low": "1.0",
+                        "close": "N/A",
+                        "volume": "1",
+                    }
+                ],
+            },
+        )
+        with pytest.raises(MalformedResponse):
+            twelvedata(respx.mock).fetch("SPY", START, END)
+
+    @respx.mock
+    def test_a_range_before_listing_is_empty_rather_than_an_error(self) -> None:
+        respx.get(url__startswith=TWELVEDATA_URL).respond(200, json={"status": "ok", "values": []})
+        assert twelvedata(respx.mock).fetch("SPY", START, END).is_empty()
+
+    @respx.mock
+    def test_html_where_json_was_expected_is_malformed(self) -> None:
+        respx.get(url__startswith=TWELVEDATA_URL).respond(200, text="<html>gateway</html>")
+        with pytest.raises(MalformedResponse, match="not JSON"):
+            twelvedata(respx.mock).fetch("SPY", START, END)

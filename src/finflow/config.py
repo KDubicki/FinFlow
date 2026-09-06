@@ -123,6 +123,7 @@ class Settings(BaseSettings):
 
     stooq_base_url: str = "https://stooq.com/q/d/l/"
     fred_base_url: str = "https://api.stlouisfed.org/fred"
+    twelvedata_base_url: str = "https://api.twelvedata.com"
 
     # Requests per minute, per source. Deliberately conservative: Stooq's
     # per-IP cap is real and undocumented, so the cost of guessing low is a
@@ -133,6 +134,18 @@ class Settings(BaseSettings):
 
     # How long a source is left alone after it reports a rate limit.
     rate_limit_deferral_hours: float = Field(default=12.0, gt=0)
+
+    source_daily_request_budget: int | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Calls one source may make in a single run, before the vendor "
+            "refuses. None means only the vendor's documented quota applies -- "
+            "which for Stooq is no quota at all, because the per-IP cap is real "
+            "and unpublished. Set it once the universe is wide enough that a "
+            "full pass would approach the cap (PROJECT.md §6.7)."
+        ),
+    )
 
     synthetic_seed: int = 20260827
 

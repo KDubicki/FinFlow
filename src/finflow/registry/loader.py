@@ -25,6 +25,13 @@ from finflow.registry.models import (
 
 DEFAULT_REGISTRY_DIR = Path("instruments")
 
+# libyaml when the wheel ships it, PyYAML's pure-Python parser otherwise. At
+# eight files and forty-odd instruments the difference is roughly 50ms of the
+# 100ms budget the load-time test enforces -- and that budget exists because the
+# registry is read at the start of every run, including the ones that are
+# already fighting a late vendor.
+_LOADER: type[yaml.SafeLoader] = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 # Top-level keys a registry file may declare. Anything else is a typo, and
 # silently ignoring it is how an instrument goes missing without a message.
 _KNOWN_KEYS = frozenset({"instruments", "universes", "series"})
@@ -32,7 +39,7 @@ _KNOWN_KEYS = frozenset({"instruments", "universes", "series"})
 
 def _read(path: Path) -> dict[str, Any]:
     try:
-        content = yaml.safe_load(path.read_text(encoding="utf-8"))
+        content = yaml.load(path.read_text(encoding="utf-8"), Loader=_LOADER)
     except yaml.YAMLError as exc:
         raise RegistryValidationError(f"invalid YAML: {exc}", source=path) from exc
     if content is None:

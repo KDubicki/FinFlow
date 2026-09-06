@@ -222,3 +222,50 @@ models:
         data_type: boolean
       - name: snapshot_id
         data_type: varchar
+
+  - name: dq_source_agreement
+    description: >
+      Cross-source divergence over a rolling window, in basis points, against a
+      per-asset-class threshold. Reported, never blocking: a reconciliation
+      source that could stop the pipeline would make the system less reliable by
+      adding a vendor to it (PROJECT.md §6.6).
+    config:
+      contract: {enforced: true}
+    columns:
+      - name: symbol
+        data_type: varchar
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_instrument'), field: instrument_key}
+      - name: date
+        data_type: date
+        tests: [not_null]
+      - name: asset_class
+        data_type: varchar
+      - name: primary_source
+        data_type: varchar
+        tests: [not_null]
+      - name: secondary_source
+        data_type: varchar
+        tests: [not_null]
+      - name: primary_close
+        data_type: double
+      - name: secondary_close
+        data_type: double
+      - name: divergence_bps
+        data_type: double
+        tests:
+          # A negative divergence would mean the absolute value is not absolute,
+          # which is the kind of arithmetic slip that only shows up as a metric
+          # nobody trusts six months later.
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments: {min_value: 0}
+      - name: threshold_bps
+        data_type: double
+        tests: [not_null]
+      - name: breaches_threshold
+        data_type: boolean
+        tests: [not_null]
+      - name: snapshot_id
+        data_type: varchar

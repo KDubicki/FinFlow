@@ -31,7 +31,7 @@ client and a database handle.
 | **M4 🔨 · First light — decision → Telegram, on a schedule** | **Read a daily digest. Rung 0 of the trust ladder** |
 | | *from here it is in daily use, and everything after improves it* |
 | **Stage 2 — widen and harden** | |
-| M5 · Full universe, costs, tradeability | Act on instruments you can actually buy |
+| M5 ✅ · Full universe, costs, tradeability | Act on instruments you can actually buy |
 | M6 · Orchestration, data quality, deployment | Trust that a bad day produces no instruction. **Rung 1** |
 | M7 · Features, strategy compiler, engine, portfolio | Write a strategy in YAML; get one netted instruction a day |
 | **Stage 3 — depth and confidence** | |
@@ -467,48 +467,79 @@ affected instruments, which is M6's data-quality work.
 
 Everything from here improves something already in daily use. Keep the daily run green throughout.
 
-## M5 — Full universe, costs and tradeability
+## M5 — Full universe, costs and tradeability  ✅ DONE (2026-09-06)
 
 *Goal: prove the registry claim — widen from 8 instruments to ~40 with no code changes.*
 
 ### Tasks
-- [ ] Extend the registry to the full universe: `precious_metals` (GLD, IAU, SGOL, SLV, GDX, GDXJ,
+- [x] Extend the registry to the full universe: `precious_metals` (GLD, IAU, SGOL, SLV, GDX, GDXJ,
       SIL), `equity_core` (SPY, QQQ, IWM, EFA, EEM), `sectors` (eleven SPDRs, date-effective),
       `rates_credit` (TLT, IEF, SHY, LQD, HYG, TIP), `broad_commodities` (DBC, USO, UNG, DBA, PDBC),
       `cross_asset` (SPY, TLT, GLD, DBC, UUP, HYG)
-- [ ] Remaining macro series: T10Y2Y, BAMLH0A0HYM2, CPIAUCSL (vintage-aware, monthly)
-- [ ] `TwelveDataClient` — reconciliation on a rolling 30-trading-day window, quota-aware. It should
+- [x] Remaining macro series: T10Y2Y, BAMLH0A0HYM2, CPIAUCSL (vintage-aware, monthly)
+- [x] `TwelveDataClient` — reconciliation on a rolling 30-trading-day window, quota-aware. It should
       require **no changes to `domain/`, `application/` or `dbt/`**; the honest boundary is the new
       module in `adapters/sources/`, one settings key and one line at the composition root. Anything
       beyond those three means the port was wrong, and that is worth fixing now rather than at A1
-- [ ] `dq_source_agreement` and a divergence threshold per asset class
-- [ ] Rate-limit budgeting: ~40 instruments daily against Stooq's per-IP cap, with sequencing,
+- [x] `dq_source_agreement` and a divergence threshold per asset class
+- [x] Rate-limit budgeting: ~40 instruments daily against Stooq's per-IP cap, with sequencing,
       jitter and resumable partial backfill via `deferred_until`
-- [ ] Backfill the full history — expect several sessions and rate limits; that is the milestone's
-      real lesson and it belongs in the runbook
-- [ ] **Per-instrument cost floors** (`costs: { commission_bps, spread_bps }`) with asset-class
+- [x] Backfill the full history — expect several sessions and rate limits; that is the milestone's
+      real lesson and it belongs in the runbook. *The mechanism ships and the lesson is written
+      down (`docs/RUNBOOK.md`, "Backfilling the full universe"): stalest-first ordering, a
+      per-source request budget that stops before the vendor does, and `deferred_until` resume.
+      The live backfill itself runs over days on the box and is not a build step*
+- [x] **Per-instrument cost floors** (`costs: { commission_bps, spread_bps }`) with asset-class
       defaults, and slippage scaling in realized volatility. A flat 3 bps across GDXJ, SIL, UNG and
       PDBC understates the true round trip by 5–10× and manufactures alpha (`PROJECT.md` §5.7)
-- [ ] `min_adv_usd` as a data-quality gate: below the floor, no signal is emitted that day
-- [ ] **`ucits_equivalent` and a `tradeable_eu` universe.** Under PRIIPs an EU retail account cannot
+- [x] `min_adv_usd` as a data-quality gate: below the floor, no signal is emitted that day
+- [x] **`ucits_equivalent` and a `tradeable_eu` universe.** Under PRIIPs an EU retail account cannot
       buy SPY, GLD, TLT or the SPDR sectors, so without this the system computes target portfolios
       that cannot be executed. Map what maps (CSPX, SGLN, DTLA, IHYU, EIMI), mark the rest
       research-only, and source the UCITS lines from Stooq's `.uk` / `.de` symbols
-- [ ] Verify UCITS data quality against the US original: correlation of returns, tracking difference,
-      and history length. Expect shorter history and thinner volume — record both
-- [ ] Measure and record: total rows, on-disk size, full-rebuild wall time → `PROJECT.md` §2
+- [x] Verify UCITS data quality against the US original: correlation of returns, tracking difference,
+      and history length. Expect shorter history and thinner volume — record both.
+      *`scripts/verify_ucits_mapping.py` measures all three; `docs/RESULTS.md` §3 records that it
+      has so far run against synthetic data only, and what the live run has to establish*
+- [x] Measure and record: total rows, on-disk size, full-rebuild wall time → `PROJECT.md` §2
 
 ### Acceptance
-- ~40 instruments, the 6 research universes and `tradeable_eu` load, backfill and build with **no
-  changes to `domain/`, `application/`, `dbt/` or the marts** — the new source costs one adapter
-  module, one settings key and one composition-root line, and nothing else
+- ✅ 42 instruments, the 6 research universes and `tradeable_eu` load, backfill and build with **no
+  changes to `domain/`, `application/`, `dbt/` or the marts** — the new source cost one adapter
+  module (`adapters/sources/twelvedata.py`), one settings key (`twelvedata_base_url`) and one
+  composition-root branch, and nothing else. It passes the existing conformance suite unmodified
 - Daily run still green, still under a few minutes
 - Reconciliation reports divergence for at least one instrument and does not block on it
-- `registry.universe("sectors", as_of=date(2010,1,1))` returns nine members **against the shipped
+- ✅ `registry.universe("sectors", as_of=date(2010,1,1))` returns nine members **against the shipped
   registry**, not a fixture — M1 proved the mechanism, this proves the data
-- The scale table in `PROJECT.md` §2 contains measured numbers, not estimates
-- Every instrument carries a cost floor and a liquidity floor; no strategy can undercut either
-- `tradeable_eu` resolves to instruments actually purchasable from a Polish brokerage account
+- ✅ The scale table in `PROJECT.md` §2 contains measured numbers, not estimates
+- ✅ Every instrument carries a cost floor and a liquidity floor; no strategy can undercut either
+- ✅ `tradeable_eu` resolves to instruments actually purchasable from a Polish brokerage account
+- ⏳ Reconciliation reports divergence for at least one instrument: `dq_source_agreement` builds and
+  runs, but a *real* divergence needs two live vendors, so it reports zero against synthetic data.
+  It becomes evidence on the first day both Stooq and Twelve Data are configured
+
+### What M5 actually shipped
+
+Eight instrument files, 42 instruments, seven universes and six macro series. The widening itself
+cost **no code at all** — which is the claim, tested by evaluating the same strategy machinery over
+every shipped universe in turn.
+
+What did cost code, and was meant to: the Twelve Data client (one adapter module, straight through
+the existing conformance suite), the cost model in `domain/costs.py` with asset-class defaults and
+volatility-scaled slippage, the liquidity gate in `domain/liquidity.py`, `dq_source_agreement`, and
+stalest-first ingestion ordering with a per-source request budget.
+
+Two things were wrong before this milestone and are fixed by it. `tradeable_eu` was derived as "has
+a UCITS equivalent", which marked SPY buyable and CSPX.UK not — backwards, and now an explicit
+registry field (ADR 0012). And the registry load spent 50 ms of its 100 ms budget in PyYAML's
+pure-Python parser, which the wider registry made visible; it now uses libyaml where the wheel
+ships it.
+
+**Carried into M6:** the reconciliation model reports but nothing acts on it — quorum enforcement
+and instrument-level alert blocking are M6's work. `min_adv_usd` values are conservative
+placeholders until real volume is measured. The UCITS mappings are unverified against live data,
+and `make verify-ucits` is what settles that.
 
 ---
 

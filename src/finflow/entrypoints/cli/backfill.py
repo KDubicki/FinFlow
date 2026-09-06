@@ -67,6 +67,7 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
                 ops_store=build_ops_store(settings),
                 clock=build_clock(),
                 deferral=timedelta(hours=settings.rate_limit_deferral_hours),
+                request_budget=settings.source_daily_request_budget,
             ).run(symbols=args.symbols, full=args.full)
     except LockHeldError as exc:
         # Exiting cleanly rather than waiting: a scheduled run is already doing

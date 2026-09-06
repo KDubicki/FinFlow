@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 from finflow.contracts.instruments import AssetClass, Frequency, ReturnBasis
 from finflow.contracts.sources import SourceKey, SourceKeyField
 from finflow.domain.calendars import is_known_calendar
+from finflow.domain.costs import CostFloor, floor_for
 from finflow.registry.errors import RegistryValidationError
 
 Symbol = Annotated[str, Field(pattern=r"^[A-Z0-9][A-Z0-9.\-]{0,15}$")]
@@ -38,10 +39,17 @@ class Costs(_Frozen):
     (``PROJECT.md`` §5.7). A strategy may raise these, never lower them.
     Slippage is not stored: it is derived from realized volatility at
     evaluation time, because spreads widen exactly when signals fire.
+
+    Omitting the block is allowed and means "use the asset-class default"
+    (``domain.costs``). Omitting *costs entirely* is not: the default is
+    deliberately pessimistic, so the cheap mistake is forgetting to be specific
+    rather than forgetting to have costs at all.
     """
 
     commission_bps: float = Field(ge=0, le=100)
-    spread_bps: float = Field(ge=0, le=500)
+    spread_bps: float = Field(gt=0, le=500)
+    """Strictly positive: a zero spread is not a market, and it is the value
+    that turns a marginal backtest into a profitable-looking one."""
 
 
 class Instrument(_Frozen):
@@ -60,9 +68,24 @@ class Instrument(_Frozen):
     sources: dict[SourceKeyField, str] = Field(min_length=1)
     return_basis: ReturnBasis = ReturnBasis.PRICE
     distribution_yield_hint: float | None = Field(default=None, ge=0, le=1)
-    costs: Costs
+    costs: Costs | None = None
     min_adv_usd: float | None = Field(default=None, ge=0)
-    ucits_equivalent: str | None = None
+    """Median dollar volume below which no signal is emitted for this
+    instrument on that day (``PROJECT.md`` §5.7). A liquidity floor, not a
+    preference: a target you cannot fill without moving the price is not a
+    target."""
+
+    ucits: bool = False
+    """True when this line is itself UCITS-domiciled, and therefore purchasable
+    from an EU retail account. Stated rather than inferred from the symbol: the
+    consequence of getting it wrong is a target portfolio that cannot be
+    executed, which is the whole reason M5 exists."""
+
+    ucits_equivalent: Symbol | None = None
+    """The UCITS line to buy instead of this one, when there is one. Must name a
+    registered instrument with ``ucits: true`` — a mapping to a fund the system
+    does not ingest is a mapping nobody can act on."""
+
     enabled: bool = True
     tags: tuple[str, ...] = ()
 
@@ -82,6 +105,12 @@ class Instrument(_Frozen):
             raise ValueError(
                 f"{self.symbol}: delisted {self.delisted} is not after inception {self.inception}"
             )
+        if self.ucits and self.ucits_equivalent is not None:
+            raise ValueError(
+                f"{self.symbol}: a UCITS line has no ucits_equivalent — it is the equivalent"
+            )
+        if self.ucits_equivalent == self.symbol:
+            raise ValueError(f"{self.symbol}: ucits_equivalent points at itself")
         if self.return_basis is not ReturnBasis.PRICE:
             # PROJECT.md §6.4: the field exists so a distributions feed is
             # additive, but no source supplies one yet, so claiming total return
@@ -91,6 +120,25 @@ class Instrument(_Frozen):
                 f"price-return everywhere until a distributions source exists (§6.4)"
             )
         return self
+
+    @property
+    def cost_floor(self) -> CostFloor:
+        """The effective floor: this instrument's own, or its class's default."""
+        if self.costs is None:
+            return floor_for(self.asset_class)
+        return CostFloor(commission_bps=self.costs.commission_bps, spread_bps=self.costs.spread_bps)
+
+    @property
+    def tradeable_eu(self) -> bool:
+        """Whether an EU retail account can buy *this* line.
+
+        Under PRIIPs it cannot buy SPY, GLD, TLT or the SPDR sectors, however
+        liquid they are, because they publish no KID. Having a UCITS equivalent
+        does not make the US line purchasable — it names what to buy instead —
+        and conflating the two produces a portfolio that looks executable and
+        is not.
+        """
+        return self.ucits
 
     @property
     def is_live(self) -> bool:
@@ -245,6 +293,26 @@ class Registry(_Frozen):
                     f"universe {universe.name!r} has unknown benchmark {universe.benchmark!r}"
                 )
 
+        # A UCITS mapping the system does not ingest is a mapping nobody can
+        # act on: the digest would say "buy CSPX.UK instead" for a line with no
+        # price series, no cost floor and no way to check it tracks.
+        for instrument in self.instruments:
+            equivalent = instrument.ucits_equivalent
+            if equivalent is None:
+                continue
+            target = self._by_symbol.get(equivalent) if self._by_symbol else None
+            target = target or next((i for i in self.instruments if i.symbol == equivalent), None)
+            if target is None:
+                raise ValueError(
+                    f"{instrument.symbol}: ucits_equivalent {equivalent!r} is not a registered "
+                    f"instrument — register the UCITS line or leave the mapping null"
+                )
+            if not target.ucits:
+                raise ValueError(
+                    f"{instrument.symbol}: ucits_equivalent {equivalent!r} is not marked "
+                    f"`ucits: true`"
+                )
+
         macro_ids = [m.id for m in self.macro]
         macro_duplicates = sorted({m for m in macro_ids if macro_ids.count(m) > 1})
         if macro_duplicates:
@@ -271,6 +339,28 @@ class Registry(_Frozen):
             raise RegistryValidationError(
                 f"unknown instrument {symbol!r}; registered: {', '.join(sorted(self._by_symbol))}"
             ) from None
+
+    def tradeable_eu(self) -> tuple[Instrument, ...]:
+        """Every line an EU retail account can actually buy.
+
+        The research universe and the live universe are reported separately
+        (``PROJECT.md`` §5.7) precisely because they differ: a backtest over SPY
+        is honest research and a dishonest instruction.
+        """
+        return tuple(i for i in self.instruments if i.tradeable_eu)
+
+    def ucits_line(self, symbol: str) -> Instrument | None:
+        """The UCITS line to buy instead of ``symbol``, if one is mapped.
+
+        Returns the instrument rather than the ticker so the caller has its
+        costs and its history, which is what "verify the mapping" needs.
+        """
+        instrument = self.instrument(symbol)
+        if instrument.tradeable_eu:
+            return instrument
+        if instrument.ucits_equivalent is None:
+            return None
+        return self._by_symbol.get(instrument.ucits_equivalent)
 
     def enabled(self) -> tuple[Instrument, ...]:
         """Instruments that should still be ingested — enabled and not delisted."""

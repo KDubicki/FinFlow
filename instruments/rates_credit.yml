@@ -1,11 +1,60 @@
 # Duration and credit.
 #
 # These are the instruments where price return is most misleading: HYG
-# distributes roughly 6-7% a year, so a long-only price-return backtest over it
-# is simply wrong (PROJECT.md §6.4). Recorded here so the caveat travels with
-# the data rather than living only in a report.
+# distributes roughly 6-7% a year and LQD around 4%, so a long-only
+# price-return backtest over either is simply wrong (PROJECT.md §6.4 and
+# ADR 0009). Recorded here so the caveat travels with the data rather than
+# living only in a report.
+#
+# The curve is deliberately covered at three points — SHY, IEF, TLT — because a
+# duration signal is a *relative* statement and one bond fund cannot express
+# one. The same reason HYG and LQD sit together: credit risk appetite is the
+# spread between them, not the level of either.
 
 instruments:
+  - symbol: SHY
+    name: iShares 1-3 Year Treasury Bond ETF
+    asset_class: rates
+    sub_class: us_treasury_short
+    exchange: XNAS
+    currency: USD
+    calendar: XNYS
+    inception: 2002-07-22
+    backfill_start: 2002-08-01
+    delisted: null
+    sources:
+      stooq: shy.us
+    return_basis: price
+    distribution_yield_hint: 0.025
+    costs: { commission_bps: 2, spread_bps: 1 }
+    min_adv_usd: 10_000_000
+    ucits_equivalent: null
+    enabled: true
+    tags: [duration, cash_proxy]
+
+  - symbol: IEF
+    name: iShares 7-10 Year Treasury Bond ETF
+    asset_class: rates
+    sub_class: us_treasury_intermediate
+    exchange: XNAS
+    currency: USD
+    calendar: XNYS
+    inception: 2002-07-22
+    backfill_start: 2002-08-01
+    delisted: null
+    sources:
+      stooq: ief.us
+      twelvedata: IEF
+    return_basis: price
+    distribution_yield_hint: 0.032
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 25_000_000
+    ucits_equivalent: null
+    enabled: true
+    # The final benchmark for the rates_credit universe once its history is
+    # long enough to matter; TLT stands in until then (see universes.yml).
+    tags: [duration, benchmark]
+
   - symbol: TLT
     name: iShares 20+ Year Treasury Bond ETF
     asset_class: rates
@@ -25,7 +74,50 @@ instruments:
     min_adv_usd: 50_000_000
     ucits_equivalent: DTLA.UK
     enabled: true
-    tags: [core, benchmark]
+    tags: [core, benchmark, duration]
+
+  - symbol: TIP
+    name: iShares TIPS Bond ETF
+    asset_class: rates
+    sub_class: us_inflation_linked
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2003-12-04
+    backfill_start: 2004-01-02
+    delisted: null
+    sources:
+      stooq: tip.us
+    return_basis: price
+    distribution_yield_hint: 0.030
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 10_000_000
+    ucits_equivalent: null
+    enabled: true
+    # Breakeven inflation is TIP against IEF. Carrying both is what makes that
+    # a computable series rather than a macro series we would have to trust
+    # someone else to publish.
+    tags: [duration, inflation]
+
+  - symbol: LQD
+    name: iShares iBoxx $ Investment Grade Corporate Bond ETF
+    asset_class: credit
+    sub_class: us_investment_grade
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2002-07-22
+    backfill_start: 2002-08-01
+    delisted: null
+    sources:
+      stooq: lqd.us
+    return_basis: price
+    distribution_yield_hint: 0.042
+    costs: { commission_bps: 2, spread_bps: 3 }
+    min_adv_usd: 25_000_000
+    ucits_equivalent: null
+    enabled: true
+    tags: [credit_risk_appetite]
 
   - symbol: HYG
     name: iShares iBoxx $ High Yield Corporate Bond ETF
@@ -41,7 +133,7 @@ instruments:
       stooq: hyg.us
     return_basis: price
     distribution_yield_hint: 0.065
-    costs: { commission_bps: 2, spread_bps: 2 }
+    costs: { commission_bps: 2, spread_bps: 3 }
     min_adv_usd: 50_000_000
     ucits_equivalent: IHYU.UK
     enabled: true

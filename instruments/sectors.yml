@@ -1,0 +1,266 @@
+# The eleven Select Sector SPDRs.
+#
+# This file is the milestone's evidence, not just its data. Nine of these listed
+# together in December 1998; XLRE was carved out of financials in October 2015
+# and XLC out of technology and discretionary in June 2018. A backtest of
+# `sectors` starting in 2010 must therefore hold **nine** members, not eleven —
+# and that is only true because membership carries its own validity window in
+# universes.yml rather than being applied at read time (PROJECT.md §5.3).
+#
+# Get that wrong and every cross-sectional result before 2015 is contaminated by
+# two funds that did not exist, in the two sectors that were reorganised. It is
+# the most expensive kind of lookahead because it looks like nothing at all.
+
+instruments:
+  - symbol: XLB
+    name: Materials Select Sector SPDR Fund
+    asset_class: equity
+    sub_class: materials
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 1998-12-16
+    backfill_start: 1999-01-04
+    delisted: null
+    sources:
+      stooq: xlb.us
+    return_basis: price
+    distribution_yield_hint: 0.018
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 10_000_000
+    # PRIIPs blocks the whole family for EU retail and no single-sector UCITS
+    # line tracks these indices closely enough to substitute. Research-only,
+    # stated rather than left to be discovered at the broker.
+    ucits_equivalent: null
+    enabled: true
+    tags: [sector]
+
+  - symbol: XLE
+    name: Energy Select Sector SPDR Fund
+    asset_class: equity
+    sub_class: energy
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 1998-12-16
+    backfill_start: 1999-01-04
+    delisted: null
+    sources:
+      stooq: xle.us
+    return_basis: price
+    distribution_yield_hint: 0.033
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 10_000_000
+    # PRIIPs blocks the whole family for EU retail and no single-sector UCITS
+    # line tracks these indices closely enough to substitute. Research-only,
+    # stated rather than left to be discovered at the broker.
+    ucits_equivalent: null
+    enabled: true
+    tags: [sector]
+
+  - symbol: XLF
+    name: Financial Select Sector SPDR Fund
+    asset_class: equity
+    sub_class: financials
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 1998-12-16
+    backfill_start: 1999-01-04
+    delisted: null
+    sources:
+      stooq: xlf.us
+    return_basis: price
+    distribution_yield_hint: 0.016
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 10_000_000
+    # PRIIPs blocks the whole family for EU retail and no single-sector UCITS
+    # line tracks these indices closely enough to substitute. Research-only,
+    # stated rather than left to be discovered at the broker.
+    ucits_equivalent: null
+    enabled: true
+    tags: [sector]
+
+  - symbol: XLI
+    name: Industrial Select Sector SPDR Fund
+    asset_class: equity
+    sub_class: industrials
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 1998-12-16
+    backfill_start: 1999-01-04
+    delisted: null
+    sources:
+      stooq: xli.us
+    return_basis: price
+    distribution_yield_hint: 0.015
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 10_000_000
+    # PRIIPs blocks the whole family for EU retail and no single-sector UCITS
+    # line tracks these indices closely enough to substitute. Research-only,
+    # stated rather than left to be discovered at the broker.
+    ucits_equivalent: null
+    enabled: true
+    tags: [sector]
+
+  - symbol: XLK
+    name: Technology Select Sector SPDR Fund
+    asset_class: equity
+    sub_class: technology
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 1998-12-16
+    backfill_start: 1999-01-04
+    delisted: null
+    sources:
+      stooq: xlk.us
+    return_basis: price
+    distribution_yield_hint: 0.007
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 10_000_000
+    # PRIIPs blocks the whole family for EU retail and no single-sector UCITS
+    # line tracks these indices closely enough to substitute. Research-only,
+    # stated rather than left to be discovered at the broker.
+    ucits_equivalent: null
+    enabled: true
+    tags: [sector]
+
+  - symbol: XLP
+    name: Consumer Staples Select Sector SPDR Fund
+    asset_class: equity
+    sub_class: consumer_staples
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 1998-12-16
+    backfill_start: 1999-01-04
+    delisted: null
+    sources:
+      stooq: xlp.us
+    return_basis: price
+    distribution_yield_hint: 0.026
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 10_000_000
+    # PRIIPs blocks the whole family for EU retail and no single-sector UCITS
+    # line tracks these indices closely enough to substitute. Research-only,
+    # stated rather than left to be discovered at the broker.
+    ucits_equivalent: null
+    enabled: true
+    tags: [sector]
+
+  - symbol: XLU
+    name: Utilities Select Sector SPDR Fund
+    asset_class: equity
+    sub_class: utilities
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 1998-12-16
+    backfill_start: 1999-01-04
+    delisted: null
+    sources:
+      stooq: xlu.us
+    return_basis: price
+    distribution_yield_hint: 0.031
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 10_000_000
+    # PRIIPs blocks the whole family for EU retail and no single-sector UCITS
+    # line tracks these indices closely enough to substitute. Research-only,
+    # stated rather than left to be discovered at the broker.
+    ucits_equivalent: null
+    enabled: true
+    tags: [sector]
+
+  - symbol: XLV
+    name: Health Care Select Sector SPDR Fund
+    asset_class: equity
+    sub_class: health_care
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 1998-12-16
+    backfill_start: 1999-01-04
+    delisted: null
+    sources:
+      stooq: xlv.us
+    return_basis: price
+    distribution_yield_hint: 0.015
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 10_000_000
+    # PRIIPs blocks the whole family for EU retail and no single-sector UCITS
+    # line tracks these indices closely enough to substitute. Research-only,
+    # stated rather than left to be discovered at the broker.
+    ucits_equivalent: null
+    enabled: true
+    tags: [sector]
+
+  - symbol: XLY
+    name: Consumer Discretionary Select Sector SPDR Fund
+    asset_class: equity
+    sub_class: consumer_discretionary
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 1998-12-16
+    backfill_start: 1999-01-04
+    delisted: null
+    sources:
+      stooq: xly.us
+    return_basis: price
+    distribution_yield_hint: 0.011
+    costs: { commission_bps: 2, spread_bps: 2 }
+    min_adv_usd: 10_000_000
+    # PRIIPs blocks the whole family for EU retail and no single-sector UCITS
+    # line tracks these indices closely enough to substitute. Research-only,
+    # stated rather than left to be discovered at the broker.
+    ucits_equivalent: null
+    enabled: true
+    tags: [sector]
+
+  - symbol: XLRE
+    name: Real Estate Select Sector SPDR Fund
+    asset_class: equity
+    sub_class: real_estate
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2015-10-07
+    backfill_start: 2015-10-08
+    delisted: null
+    sources:
+      stooq: xlre.us
+    return_basis: price
+    distribution_yield_hint: 0.035
+    costs: { commission_bps: 2, spread_bps: 3 }
+    min_adv_usd: 10_000_000
+    # PRIIPs blocks the whole family for EU retail and no single-sector UCITS
+    # line tracks these indices closely enough to substitute. Research-only,
+    # stated rather than left to be discovered at the broker.
+    ucits_equivalent: null
+    enabled: true
+    tags: [sector]
+
+  - symbol: XLC
+    name: Communication Services Select Sector SPDR Fund
+    asset_class: equity
+    sub_class: communication_services
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2018-06-18
+    backfill_start: 2018-06-19
+    delisted: null
+    sources:
+      stooq: xlc.us
+    return_basis: price
+    distribution_yield_hint: 0.009
+    costs: { commission_bps: 2, spread_bps: 3 }
+    min_adv_usd: 10_000_000
+    # PRIIPs blocks the whole family for EU retail and no single-sector UCITS
+    # line tracks these indices closely enough to substitute. Research-only,
+    # stated rather than left to be discovered at the broker.
+    ucits_equivalent: null
+    enabled: true
+    tags: [sector]

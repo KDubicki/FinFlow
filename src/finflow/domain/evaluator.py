@@ -52,6 +52,7 @@ def decide(
     *,
     universe: Sequence[str] = (),
     excluded: Mapping[str, str] | None = None,
+    substitutions: Mapping[str, str] | None = None,
     snapshot_id: str | None = None,
 ) -> Decision:
     """Evaluate one strategy as of one date and return its target portfolio.
@@ -65,12 +66,19 @@ def decide(
     absent. That distinction is the difference between "nothing fired" and "we
     never looked", and only one of them is an incident.
 
-    ``excluded`` maps a symbol to the reason it may not be held — a ``/mute``,
-    or a tradeability filter from M5. Excluded symbols are still evaluated and
-    still recorded as withheld, because the counterfactual is what makes the
+    ``excluded`` maps a symbol to the reason it may not be held — a ``/mute``, a
+    liquidity floor, a tradeability filter. Excluded symbols are still evaluated
+    and still recorded as withheld, because the counterfactual is what makes the
     override reviewable later (``PROJECT.md`` §7.7).
+
+    ``substitutions`` maps a symbol to the line to buy *instead* of it. Under
+    PRIIPs an EU retail account cannot buy SPY however liquid it is, so a target
+    naming SPY is research unless it also names what to purchase (§5.7). The
+    substitution rides on the position rather than being looked up at delivery,
+    so the instruction is self-contained.
     """
     excluded = dict(excluded or {})
+    substitutions = dict(substitutions or {})
     _require_columns(features, strategy)
 
     members = tuple(universe)
@@ -123,7 +131,9 @@ def decide(
         strategy_version=strategy.version,
         as_of=as_of,
         data_as_of=_max_date(history),
-        positions=tuple(TargetPosition(symbol, weight) for symbol in firing),
+        positions=tuple(
+            TargetPosition(symbol, weight, substitutions.get(symbol)) for symbol in firing
+        ),
         withheld=tuple(withheld),
         scope=Scope.STRATEGY,
         snapshot_id=snapshot_id,

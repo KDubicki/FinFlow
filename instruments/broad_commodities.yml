@@ -1,0 +1,143 @@
+# Broad commodities and the dollar.
+#
+# Two warnings travel with this file, and both are about the instruments rather
+# than the code.
+#
+# **These are futures-based funds, and roll yield is not a detail.** USO lost
+# most of its value to contango between 2009 and 2020 while spot oil went
+# roughly sideways, and UNG's decay is worse. Their price series are honest
+# records of what a holder actually earned, which is exactly why they belong
+# here rather than a spot index: a strategy backtested on spot and traded
+# through these funds is backtested on an instrument that does not exist.
+#
+# **The spreads are wide and the volumes are thin.** PDBC and DBA are the two
+# instruments in the whole registry most likely to have a signal eaten entirely
+# by its own cost floor, which is the point of carrying the floor.
+
+instruments:
+  - symbol: DBC
+    name: Invesco DB Commodity Index Tracking Fund
+    asset_class: commodity
+    sub_class: broad_commodity
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2006-02-03
+    backfill_start: 2006-03-01
+    delisted: null
+    sources:
+      stooq: dbc.us
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 5 }
+    min_adv_usd: 5_000_000
+    ucits_equivalent: null
+    enabled: true
+    tags: [cross_asset, roll_yield]
+
+  - symbol: PDBC
+    name: Invesco Optimum Yield Diversified Commodity Strategy No K-1 ETF
+    asset_class: commodity
+    sub_class: broad_commodity
+    exchange: XNAS
+    currency: USD
+    calendar: XNYS
+    inception: 2014-11-07
+    backfill_start: 2014-12-01
+    delisted: null
+    sources:
+      stooq: pdbc.us
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 6 }
+    min_adv_usd: 2_000_000
+    ucits_equivalent: null
+    enabled: true
+    tags: [roll_yield, thin]
+
+  - symbol: USO
+    name: United States Oil Fund LP
+    asset_class: commodity
+    sub_class: energy
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2006-04-10
+    backfill_start: 2006-05-01
+    delisted: null
+    sources:
+      stooq: uso.us
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 4 }
+    min_adv_usd: 5_000_000
+    ucits_equivalent: null
+    enabled: true
+    # Reverse-split several times, most recently 1:8 in 2020. Stooq's .us series
+    # is split-adjusted, which is why the split does not show as a 90% one-day
+    # loss -- and why the gap test is the thing that would catch it if it ever
+    # stopped being adjusted.
+    tags: [roll_yield]
+
+  - symbol: UNG
+    name: United States Natural Gas Fund LP
+    asset_class: commodity
+    sub_class: energy
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2007-04-18
+    backfill_start: 2007-05-01
+    delisted: null
+    sources:
+      stooq: ung.us
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 8 }
+    min_adv_usd: 2_000_000
+    ucits_equivalent: null
+    enabled: true
+    tags: [roll_yield, thin]
+
+  - symbol: DBA
+    name: Invesco DB Agriculture Fund
+    asset_class: commodity
+    sub_class: agriculture
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2007-01-05
+    backfill_start: 2007-02-01
+    delisted: null
+    sources:
+      stooq: dba.us
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 6 }
+    min_adv_usd: 2_000_000
+    ucits_equivalent: null
+    enabled: true
+    tags: [roll_yield, thin]
+
+  - symbol: UUP
+    name: Invesco DB US Dollar Index Bullish Fund
+    asset_class: currency
+    sub_class: usd_index
+    exchange: ARCA
+    currency: USD
+    calendar: XNYS
+    inception: 2007-02-20
+    backfill_start: 2007-03-01
+    delisted: null
+    sources:
+      stooq: uup.us
+    return_basis: price
+    distribution_yield_hint: 0.0
+    costs: { commission_bps: 2, spread_bps: 4 }
+    min_adv_usd: 2_000_000
+    ucits_equivalent: null
+    enabled: true
+    # The tradeable counterpart to the `usd_broad` macro series. Having both is
+    # what lets a cross-asset rule reference the dollar as a *position* rather
+    # than only as a driver.
+    tags: [cross_asset]

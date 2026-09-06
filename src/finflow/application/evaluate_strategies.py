@@ -27,6 +27,7 @@ import polars as pl
 
 from finflow.domain.decision import Decision
 from finflow.domain.evaluator import decide
+from finflow.domain.liquidity import below_floor, median_dollar_volume
 from finflow.domain.strategy import DEFAULT_STRATEGIES, Strategy
 from finflow.logging import get_logger
 from finflow.ports.clock import Clock
@@ -123,12 +124,14 @@ class EvaluateStrategies:
 
         for strategy in self._strategies:
             members = [i.symbol for i in self._registry.universe(strategy.universe, today)]
+            features = self._features(members)
             decision = decide(
-                self._features(members),
+                features,
                 strategy,
                 today,
                 universe=members,
-                excluded=muted,
+                excluded={**self._illiquid(features, members), **muted},
+                substitutions=self._substitutions(members),
                 snapshot_id=snapshot_id,
             )
             # Recorded before any decision about delivery, so the counterfactual
@@ -183,6 +186,34 @@ class EvaluateStrategies:
         return [p.canonical() for p in sorted(previous.positions, key=lambda p: p.symbol)] != [
             p.canonical() for p in sorted(decision.positions, key=lambda p: p.symbol)
         ]
+
+    def _illiquid(self, features: pl.DataFrame, symbols: Sequence[str]) -> dict[str, str]:
+        """Instruments whose recent volume cannot absorb a position.
+
+        A gate rather than a preference (``PROJECT.md`` §5.7): below the floor
+        no signal is emitted for that instrument that day. It is applied *before*
+        the user's own mutes in the merge above, so an explicit mute wins the
+        wording — the user's reason is more useful to them than ours.
+        """
+        floors = {symbol: self._registry.instrument(symbol).min_adv_usd for symbol in symbols}
+        return below_floor(median_dollar_volume(features), floors)
+
+    def _substitutions(self, symbols: Sequence[str]) -> dict[str, str]:
+        """What to buy instead, for targets an EU account cannot purchase.
+
+        Empty for a universe that is already tradeable, which is why a strategy
+        written against ``tradeable_eu`` produces a message with no substitution
+        clutter at all.
+        """
+        substitutions: dict[str, str] = {}
+        for symbol in symbols:
+            instrument = self._registry.instrument(symbol)
+            if instrument.tradeable_eu:
+                continue
+            line = self._registry.ucits_line(symbol)
+            if line is not None:
+                substitutions[symbol] = line.symbol
+        return substitutions
 
     def _features(self, symbols: Sequence[str]) -> pl.DataFrame:
         """Read the bars for one universe out of the mart.

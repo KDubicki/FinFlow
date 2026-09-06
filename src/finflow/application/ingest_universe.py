@@ -33,7 +33,7 @@ from finflow.ports.clock import Clock
 from finflow.ports.object_store import ObjectStore
 from finflow.ports.ops_store import OpsStore, Watermark
 from finflow.ports.source import SourceClient
-from finflow.registry.models import Registry
+from finflow.registry.models import Instrument, Registry
 
 log = get_logger(__name__)
 
@@ -76,6 +76,7 @@ class IngestUniverse:
         clock: Clock,
         deferral: timedelta = timedelta(hours=12),
         sleep: object = time.sleep,
+        request_budget: int | None = None,
     ) -> None:
         self._registry = registry
         self._sources = sources
@@ -84,6 +85,7 @@ class IngestUniverse:
         self._clock = clock
         self._deferral = deferral
         self._sleep = sleep
+        self._request_budget = request_budget
 
     def run(self, *, symbols: Sequence[str] | None = None, full: bool = False) -> IngestionOutcome:
         """Ingest, returning what happened rather than raising on partial failure.
@@ -98,28 +100,40 @@ class IngestUniverse:
         ]
         log.info("ingestion_started", run_id=outcome.run_id, instruments=len(instruments))
 
-        for instrument in instruments:
-            for source_key, vendor_symbol in instrument.sources.items():
-                client = self._sources.get(source_key)
-                if client is None:
-                    # The registry validates that source keys are implementable;
-                    # this only fires when a run is wired with a subset.
-                    outcome.skipped[f"{source_key}:{instrument.symbol}"] = "source not wired"
-                    continue
-                if source_key in outcome.deferred_sources:
-                    outcome.skipped[f"{source_key}:{instrument.symbol}"] = "source deferred earlier"
-                    self._defer(source_key, instrument.symbol)
-                    continue
-                self._ingest_one(
-                    client=client,
-                    source_key=source_key,
-                    symbol=instrument.symbol,
-                    vendor_symbol=vendor_symbol,
-                    start=self._start_for(
-                        source_key, instrument.symbol, instrument.backfill_start, full
-                    ),
-                    outcome=outcome,
-                )
+        spent: dict[SourceKey, int] = {}
+        for instrument, source_key, vendor_symbol in self._work_order(instruments):
+            client = self._sources.get(source_key)
+            if client is None:
+                # The registry validates that source keys are implementable;
+                # this only fires when a run is wired with a subset.
+                outcome.skipped[f"{source_key}:{instrument.symbol}"] = "source not wired"
+                continue
+            if source_key in outcome.deferred_sources:
+                outcome.skipped[f"{source_key}:{instrument.symbol}"] = "source deferred earlier"
+                self._defer(source_key, instrument.symbol)
+                continue
+
+            budget = self._budget_for(client)
+            if budget is not None and spent.get(source_key, 0) >= budget:
+                # Stop *before* the vendor stops us. A run that spends its last
+                # call being refused has learned nothing and may have earned a
+                # block; one that stops at the budget resumes tomorrow from the
+                # same watermark.
+                outcome.skipped[f"{source_key}:{instrument.symbol}"] = "daily budget exhausted"
+                self._defer(source_key, instrument.symbol)
+                continue
+
+            spent[source_key] = spent.get(source_key, 0) + 1
+            self._ingest_one(
+                client=client,
+                source_key=source_key,
+                symbol=instrument.symbol,
+                vendor_symbol=vendor_symbol,
+                start=self._start_for(
+                    source_key, instrument.symbol, instrument.backfill_start, full
+                ),
+                outcome=outcome,
+            )
 
         outcome.manifest = Manifest.of(
             outcome.run_id,
@@ -135,6 +149,55 @@ class IngestUniverse:
             summary=outcome.summary(),
         )
         return outcome
+
+    # ---- what to fetch, and in what order --------------------------------
+
+    def _work_order(
+        self, instruments: Sequence[Instrument]
+    ) -> list[tuple[Instrument, SourceKey, str]]:
+        """Every (instrument, source) pair, **stalest first**.
+
+        Registry order is the obvious choice and the wrong one. At forty
+        instruments against an undocumented per-IP cap, a run that always starts
+        at the top of the file re-fetches the same first half every morning and
+        the tail never updates — the backfill converges on nothing, and the
+        failure looks like "the vendor is flaky" rather than "we keep asking the
+        same questions".
+
+        Ordering by staleness makes a partial run *progress*: whatever was
+        skipped yesterday is at the front today. Ties break on source then
+        symbol so the order is deterministic and a test can assert it.
+        """
+        pairs: list[tuple[Instrument, SourceKey, str]] = [
+            (instrument, source_key, vendor_symbol)
+            for instrument in instruments
+            for source_key, vendor_symbol in instrument.sources.items()
+        ]
+
+        def staleness(pair: tuple[Instrument, SourceKey, str]) -> tuple[float, str, str]:
+            instrument, source_key, _ = pair
+            mark = self._ops.watermark(source_key, instrument.symbol)
+            # Never fetched sorts first: an instrument with no data at all is
+            # the one most worth a call.
+            last_run = mark.last_run_at.timestamp() if mark and mark.last_run_at else 0.0
+            return (last_run, str(source_key), instrument.symbol)
+
+        return sorted(pairs, key=staleness)
+
+    def _budget_for(self, client: SourceClient) -> int | None:
+        """How many calls this source may take in one run.
+
+        The tighter of the configured budget and the vendor's documented quota.
+        An *undocumented* quota is None, which means unknown rather than
+        unlimited — Stooq's per-IP cap is real and simply unpublished, which is
+        exactly why the configured budget exists.
+        """
+        quota = client.capabilities().max_requests_per_day
+        if self._request_budget is None:
+            return quota
+        if quota is None:
+            return self._request_budget
+        return min(self._request_budget, quota)
 
     # ---- one (source, symbol) pair ---------------------------------------
 

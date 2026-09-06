@@ -30,6 +30,13 @@ DEGRADED = "degraded"
 
 _MARK = {OK: "ok", FAILED: "FAILED", SKIPPED: "skipped", DEGRADED: "degraded"}
 
+MAX_WITHHELD = 6
+"""How many withheld lines the digest prints before summarising the rest.
+
+Six fits on a phone screen alongside everything else. The count of what is not
+shown is always printed, so the message is bounded without ever implying the
+list is complete."""
+
 
 @dataclass(frozen=True, slots=True)
 class Step:
@@ -163,10 +170,16 @@ def render_digest(digest: Digest) -> str:
 
     if digest.withheld:
         # Never silent: a control the user forgot they set is indistinguishable
-        # from a bug unless the digest lists it (PROJECT.md §7.7).
+        # from a bug unless the digest lists it (PROJECT.md §7.7). Capped, not
+        # truncated -- a forty-instrument universe can withhold a dozen names on
+        # a quiet day, and a message nobody finishes reading suppresses just as
+        # effectively as one that never mentioned them.
         lines.append("")
         lines.append("Withheld")
-        lines.extend(f"  {item}" for item in digest.withheld)
+        lines.extend(f"  {item}" for item in digest.withheld[:MAX_WITHHELD])
+        remaining = len(digest.withheld) - MAX_WITHHELD
+        if remaining > 0:
+            lines.append(f"  ... and {remaining} more — /status, or the run log")
 
     if digest.notes:
         lines.append("")
@@ -213,10 +226,14 @@ def render_decision(decision: Decision, *, today: date, sessions_behind: int = 0
         lines.append("Target: flat — hold no position from this strategy.")
     else:
         lines.append("Target portfolio:")
-        lines.extend(
-            f"  {position.symbol}  {position.weight:.0%}"
-            for position in sorted(decision.positions, key=lambda p: -p.weight)
-        )
+        for position in sorted(decision.positions, key=lambda p: (-p.weight, p.symbol)):
+            line = f"  {position.symbol}  {position.weight:.0%}"
+            if position.buy_instead:
+                # Not a footnote: under PRIIPs the named fund cannot be bought
+                # from an EU account, so an instruction without this is one the
+                # reader cannot act on (PROJECT.md §5.7).
+                line += f"  -> buy {position.buy_instead}"
+            lines.append(line)
 
     if sessions_behind:
         lines.append("")

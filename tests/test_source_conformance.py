@@ -21,16 +21,43 @@ from finflow.adapters.sources.fred import FredClient
 from finflow.adapters.sources.http import HttpFetcher
 from finflow.adapters.sources.stooq import StooqClient
 from finflow.adapters.sources.synthetic import SyntheticClient
+from finflow.adapters.sources.twelvedata import TwelveDataClient
 from finflow.contracts.frames import MacroObservation, OhlcvBar, validate_frame
 from finflow.ports.source import SourceClient
 
 STOOQ_URL = "https://stooq.test/q/d/l/"
 FRED_URL = "https://fred.test/fred"
+TWELVEDATA_URL = "https://twelvedata.test"
 
 STOOQ_CSV = """Date,Open,High,Low,Close,Volume
 2024-01-02,190.1,192.4,189.5,191.2,7000000
 2024-01-03,191.2,191.9,188.7,189.4,6500000
 """
+
+TWELVEDATA_JSON = {
+    "meta": {"symbol": "SPY", "interval": "1day"},
+    # Every numeric field is a string, and that is the vendor's own format
+    # rather than a quirk of this fixture.
+    "values": [
+        {
+            "datetime": "2024-01-02",
+            "open": "190.1",
+            "high": "192.4",
+            "low": "189.5",
+            "close": "191.2",
+            "volume": "7000000",
+        },
+        {
+            "datetime": "2024-01-03",
+            "open": "191.2",
+            "high": "191.9",
+            "low": "188.7",
+            "close": "189.4",
+            "volume": "6500000",
+        },
+    ],
+    "status": "ok",
+}
 
 FRED_JSON = {
     "observations": [
@@ -56,6 +83,13 @@ def client(request: pytest.FixtureRequest) -> Iterator[SourceClient]:
                 200, text=STOOQ_CSV, headers={"content-type": "text/plain"}
             )
             yield StooqClient(HttpFetcher(source="stooq", client=http), base_url=STOOQ_URL)
+        elif kind == "twelvedata":
+            mock.get(url__startswith=TWELVEDATA_URL).respond(200, json=TWELVEDATA_JSON)
+            yield TwelveDataClient(
+                HttpFetcher(source="twelvedata", client=http),
+                base_url=TWELVEDATA_URL,
+                api_key="k",
+            )
         elif kind == "fred":
             mock.get(url__startswith=FRED_URL).respond(200, json=FRED_JSON)
             yield FredClient(
@@ -66,7 +100,10 @@ def client(request: pytest.FixtureRequest) -> Iterator[SourceClient]:
 
 
 pytestmark = pytest.mark.parametrize(
-    "client", ["synthetic", "stooq", "fred"], indirect=True, ids=["synthetic", "stooq", "fred"]
+    "client",
+    ["synthetic", "stooq", "twelvedata", "fred"],
+    indirect=True,
+    ids=["synthetic", "stooq", "twelvedata", "fred"],
 )
 
 
