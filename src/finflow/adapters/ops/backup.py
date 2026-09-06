@@ -16,6 +16,7 @@ from __future__ import annotations
 import gzip
 import shutil
 import sqlite3
+import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -117,14 +118,106 @@ def latest_backup(directory: Path) -> Path | None:
     return archives[-1] if archives else None
 
 
-def prune(directory: Path, *, keep_daily: int = 30) -> list[Path]:
-    """Remove all but the most recent ``keep_daily`` backups.
+def prune(directory: Path, *, keep_daily: int = 30, keep_monthly: int = 0) -> list[Path]:
+    """Remove backups outside the retention window.
 
-    Deliberately explicit and never called by the pipeline: retention on the
-    only irreplaceable state is an operator decision.
+    Two windows, per ``PROJECT.md`` §11.3: the most recent ``keep_daily``
+    archives, plus the **first archive of each of the last ``keep_monthly``
+    months**. The monthly tier is what survives a corruption that is only
+    noticed weeks later — a thirty-day window keeps thirty copies of the same
+    bad database.
+
+    ``keep_monthly`` defaults to zero so that calling this with only a daily
+    count means exactly what it says. The daily job passes both.
     """
     archives = sorted(directory.glob("ops-*.sqlite*"))
-    doomed = archives[:-keep_daily] if len(archives) > keep_daily else []
+    keep = set(archives[-keep_daily:]) if keep_daily else set()
+
+    if keep_monthly:
+        first_of_month: dict[str, Path] = {}
+        for archive in archives:
+            # ops-20260901T050000Z.sqlite.gz -> 202609
+            month = archive.name[4:10]
+            first_of_month.setdefault(month, archive)
+        for month in sorted(first_of_month)[-keep_monthly:]:
+            keep.add(first_of_month[month])
+
+    doomed = [archive for archive in archives if archive not in keep]
     for path in doomed:
         path.unlink()
     return doomed
+
+
+class EncryptionUnavailable(RuntimeError):
+    """``age`` is configured but not installed, or refused the recipient.
+
+    Raised rather than silently writing the backup in the clear. A backup that
+    is quietly unencrypted is worse than no backup, because it is trusted.
+    """
+
+
+def encrypt(archive: Path, recipient: str) -> Path:
+    """Encrypt one archive to an ``age`` recipient, removing the plaintext.
+
+    ``age`` rather than GPG because the whole configuration is one public key in
+    ``.env`` and one private key in a password manager — and a backup scheme
+    nobody can remember how to restore from is not a backup scheme.
+    """
+    destination = archive.with_suffix(archive.suffix + ".age")
+    try:
+        result = subprocess.run(
+            ["age", "-r", recipient, "-o", str(destination), str(archive)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise EncryptionUnavailable(
+            "FINFLOW_AGE_RECIPIENT is set but the `age` binary is not installed"
+        ) from exc
+    if result.returncode != 0:
+        destination.unlink(missing_ok=True)
+        raise EncryptionUnavailable(f"age failed: {result.stderr.strip()[:300]}")
+
+    archive.unlink()
+    log.info("ops_backup_encrypted", destination=str(destination))
+    return destination
+
+
+def mirror_raw_zone(raw_dir: Path, destination_dir: Path, *, now: datetime) -> Path | None:
+    """Hard-linked snapshot of the raw zone on a second device.
+
+    ``rsync --link-dest`` against the previous snapshot, so each night costs
+    only the partitions that are new — the raw zone is append-only, so that is
+    a handful of files rather than a full copy.
+
+    Returns None when rsync is unavailable, because a missing tool is an
+    operator problem to fix rather than a reason to fail the pipeline. The
+    digest says it did not happen.
+    """
+    if not raw_dir.is_dir():
+        return None
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    previous = sorted(p for p in destination_dir.glob("raw-*") if p.is_dir())
+    target = destination_dir / f"raw-{now.strftime('%Y%m%dT%H%M%SZ')}"
+
+    command = ["rsync", "-a", "--delete"]
+    if previous:
+        command.append(f"--link-dest={previous[-1]}")
+    command.extend([f"{raw_dir}/", f"{target}/"])
+
+    try:
+        result = subprocess.run(command, check=False, capture_output=True, text=True)
+    except FileNotFoundError:
+        log.warning("raw_mirror_skipped", reason="rsync is not installed")
+        return None
+    if result.returncode != 0:
+        log.error("raw_mirror_failed", stderr=result.stderr.strip()[:300])
+        return None
+
+    log.info(
+        "raw_mirror_written",
+        destination=str(target),
+        linked_from=str(previous[-1]) if previous else None,
+    )
+    return target

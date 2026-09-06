@@ -1,0 +1,30 @@
+# 05:30 UTC: well after the US close, before the morning it reports on.
+#
+# UTC rather than local time deliberately (PROJECT.md §11.6): a local schedule
+# shifts twice a year against the data it is reading, and the day it shifts is
+# the day the digest is silently built from yesterday.
+
+[Unit]
+Description=Run the FinFlow daily pipeline
+Documentation=file:///opt/finflow/docs/RUNBOOK.md
+
+[Timer]
+OnCalendar=*-*-* 05:30:00 UTC
+
+# A second attempt before declaring a bad day. A vendor that has not published
+# by 05:30 usually has by 10:30, and a mid-morning retry costs nothing because
+# an unchanged decision produces no message.
+OnCalendar=*-*-* 10:30:00 UTC
+
+# A run missed while the machine was off fires on the next boot rather than
+# being skipped. On one box that is not a rare case: it is what a power cut,
+# an upgrade or a reboot looks like.
+Persistent=true
+
+# Enough jitter to avoid hitting a vendor at exactly the same second as every
+# other scheduled job in the world, not enough to move the digest's arrival.
+RandomizedDelaySec=120
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

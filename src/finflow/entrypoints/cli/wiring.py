@@ -9,6 +9,8 @@ tests without patching anything.
 from __future__ import annotations
 
 from finflow.adapters.clock import SystemClock
+from finflow.adapters.health import HealthchecksHeartbeat, NullHeartbeat
+from finflow.adapters.notify import ConsoleNotifier, SilentInbox, TelegramBot
 from finflow.adapters.ops.sqlite import SqliteOpsStore
 from finflow.adapters.sources.fred import FredClient
 from finflow.adapters.sources.http import HttpFetcher, build_client
@@ -19,6 +21,8 @@ from finflow.config import Settings
 from finflow.contracts.sources import SourceKey
 from finflow.domain.ratelimit import TokenBucket
 from finflow.logging import get_logger
+from finflow.ports.heartbeat import Heartbeat
+from finflow.ports.notifier import CommandInbox, Notifier
 from finflow.ports.source import SourceClient
 
 log = get_logger(__name__)
@@ -88,3 +92,60 @@ def build_ops_store(settings: Settings) -> SqliteOpsStore:
 def build_clock() -> SystemClock:
     """The real clock. The only one outside tests."""
     return SystemClock()
+
+
+def build_bot(settings: Settings) -> TelegramBot | None:
+    """The Telegram bot, or None when it is not configured.
+
+    Both halves come from one object because Telegram is one API. Returning
+    None rather than a half-built client keeps the "no credential means that
+    channel is unavailable" rule of ``build_sources`` — a missing token must
+    mean "no chat", never "nothing runs".
+    """
+    if settings.telegram_bot_token is None or settings.telegram_chat_id is None:
+        log.warning(
+            "notifier_unavailable",
+            reason="FINFLOW_TELEGRAM_BOT_TOKEN or FINFLOW_TELEGRAM_CHAT_ID not set",
+        )
+        return None
+    return TelegramBot(
+        client=build_client(
+            timeout=settings.http_timeout_seconds, user_agent=settings.http_user_agent
+        ),
+        token=settings.telegram_bot_token.get_secret_value(),
+        chat_id=settings.telegram_chat_id,
+        base_url=settings.telegram_base_url,
+    )
+
+
+def build_notifier(settings: Settings, *, dry_run: bool = False) -> Notifier:
+    """Where messages go. The console when there is no bot, or on a dry run."""
+    if dry_run:
+        return ConsoleNotifier()
+    bot = build_bot(settings)
+    return bot if bot is not None else ConsoleNotifier()
+
+
+def build_inbox(settings: Settings, *, dry_run: bool = False) -> CommandInbox:
+    """Where commands come from. Empty when there is no bot, or on a dry run.
+
+    A dry run must not drain the real inbox: draining acknowledges the updates,
+    and a rehearsal that swallowed the user's ``/position`` would lose it
+    silently.
+    """
+    if dry_run:
+        return SilentInbox()
+    bot = build_bot(settings)
+    return bot if bot is not None else SilentInbox()
+
+
+def build_heartbeat(settings: Settings, *, dry_run: bool = False) -> Heartbeat:
+    """The dead-man's switch, or a loud no-op when none is configured."""
+    if dry_run or settings.healthchecks_url is None:
+        return NullHeartbeat()
+    return HealthchecksHeartbeat(
+        client=build_client(
+            timeout=settings.http_timeout_seconds, user_agent=settings.http_user_agent
+        ),
+        url=settings.healthchecks_url,
+    )

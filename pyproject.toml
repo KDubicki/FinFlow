@@ -36,6 +36,8 @@ dev = [
 [project.scripts]
 finflow-backfill = "finflow.entrypoints.cli.backfill:main"
 finflow-build = "finflow.entrypoints.cli.build:main"
+finflow-daily = "finflow.entrypoints.cli.daily:main"
+finflow-backup = "finflow.entrypoints.cli.backup:main"
 
 [build-system]
 requires = ["hatchling"]

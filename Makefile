@@ -2,7 +2,7 @@
 # Every target is safe to run repeatedly.
 
 .DEFAULT_GOAL := help
-.PHONY: help install lint format typecheck imports registry dialect audit test test-fast cov check clean test-live up down demo backfill backfill-offline build dbt-deps daily docs
+.PHONY: help install lint format typecheck imports registry dialect audit test test-fast cov check clean test-live up down demo backfill backfill-offline build dbt-deps daily daily-dry backup restore-check docs
 
 PYTHON_VERSION := 3.12
 
@@ -75,8 +75,17 @@ backfill:  ## Backfill the full instrument universe
 backfill-offline:  ## Backfill from the synthetic source, no network
 	uv run finflow-backfill --offline $(ARGS)
 
-daily:  ## Run the daily pipeline: ingest -> load -> dbt -> evaluate -> deliver (M4)
-	@echo "Not implemented until M4."
+daily:  ## Run the daily pipeline: ingest -> build -> evaluate -> deliver -> digest
+	uv run finflow-daily $(ARGS)
+
+daily-dry:  ## Rehearse the daily run: print the digest, send nothing, drain nothing
+	uv run finflow-daily --offline --dry-run $(ARGS)
+
+backup:  ## Back up the ops store and mirror the raw zone to the second device
+	uv run finflow-backup $(ARGS)
+
+restore-check:  ## Monthly drill: verify the newest backup restores. Changes nothing
+	uv run finflow-backup --check
 
 dbt-deps:  ## Install dbt packages from the committed lockfile
 	cd dbt && DBT_PROFILES_DIR=. uv run dbt deps

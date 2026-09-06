@@ -9,23 +9,51 @@ debugging a model calls only this one.
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 from finflow.adapters.warehouse import DuckDBWarehouse, WarehouseLockedError
-from finflow.application.build_warehouse import BuildWarehouse
+from finflow.application.build_warehouse import BuildOutcome, BuildWarehouse
 from finflow.config import Settings, get_settings
 from finflow.entrypoints.cli.locking import ExclusiveLock, LockHeldError
 from finflow.entrypoints.cli.wiring import build_clock, build_object_store, build_ops_store
 from finflow.logging import configure_logging, get_logger
 from finflow.ports.ops_store import PipelineRun
 from finflow.registry import RegistryError, load_registry
+from finflow.registry.models import Registry
 
 log = get_logger(__name__)
 
 DBT_DIR = Path(__file__).resolve().parents[4] / "dbt"
+RUN_RESULTS = DBT_DIR / "target" / "run_results.json"
+
+
+class DbtFailed(RuntimeError):
+    """``dbt build`` returned non-zero.
+
+    Carries the check counts, because the daily run needs them for the digest
+    whether dbt failed on a broken model or on a data test — and "seven tests
+    failed" is a different message from "the model would not compile".
+    """
+
+    def __init__(self, message: str, *, passed: int = 0, failed: int = 0) -> None:
+        super().__init__(message)
+        self.passed = passed
+        self.failed = failed
+
+
+@dataclass
+class BuildResult:
+    """What one load-and-transform produced."""
+
+    outcome: BuildOutcome
+    checks_passed: int = 0
+    checks_failed: int = 0
+    failed_checks: tuple[str, ...] = ()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -110,6 +138,82 @@ def _clean_env() -> dict[str, str]:
     return dict(os.environ)
 
 
+def dbt_check_counts() -> tuple[int, int, tuple[str, ...]]:
+    """Read the last dbt run's test results.
+
+    dbt's own artifact rather than a count of our own: the tests are declared in
+    ``_marts.yml`` and adding one there must show up in the digest without
+    anyone remembering to increment something here.
+
+    A missing or unreadable artifact reports zeros rather than raising. It means
+    dbt did not get far enough to write one, which the step status already says.
+    """
+    if not RUN_RESULTS.is_file():
+        return 0, 0, ()
+    try:
+        payload = json.loads(RUN_RESULTS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0, 0, ()
+
+    passed = failed = 0
+    names: list[str] = []
+    for result in payload.get("results", []):
+        unique_id = str(result.get("unique_id", ""))
+        if not unique_id.startswith("test."):
+            continue
+        if str(result.get("status")) == "pass":
+            passed += 1
+        else:
+            failed += 1
+            names.append(unique_id.split(".")[-2] if "." in unique_id else unique_id)
+    return passed, failed, tuple(names)
+
+
+def load_and_build(
+    settings: Settings,
+    registry: Registry,
+    *,
+    snapshot_id: str,
+    skip_dbt: bool = False,
+    promote_snapshot: bool = True,
+) -> BuildResult:
+    """Load bronze, run dbt, promote the serving snapshot.
+
+    **The caller must already hold the pipeline lock.** The three phases each
+    need the single DuckDB writer and dbt runs in its own process, so the
+    connection is handed over between them rather than held; the outer ``flock``
+    is what makes that safe. Holding one connection across the dbt call would
+    deadlock the run against itself -- which is exactly what it did the first
+    time.
+    """
+    warehouse_path = settings.data_dir / "warehouse.duckdb"
+    with DuckDBWarehouse(warehouse_path) as warehouse:
+        outcome = BuildWarehouse(
+            object_store=build_object_store(settings),
+            warehouse=warehouse,
+            registry=registry,
+        ).run(snapshot_id=snapshot_id)
+
+    if skip_dbt:
+        return BuildResult(outcome=outcome)
+
+    try:
+        run_dbt(warehouse_path, snapshot_id, registry.commit.sha)
+    except RuntimeError as exc:
+        passed, failed, _names = dbt_check_counts()
+        raise DbtFailed(str(exc), passed=passed, failed=failed) from exc
+
+    passed, failed, names = dbt_check_counts()
+
+    if promote_snapshot:
+        with DuckDBWarehouse(warehouse_path) as warehouse:
+            warehouse.snapshot_to(settings.data_dir / "serving.duckdb")
+
+    return BuildResult(
+        outcome=outcome, checks_passed=passed, checks_failed=failed, failed_checks=names
+    )
+
+
 def main(argv: list[str] | None = None, settings: Settings | None = None) -> int:
     """Load bronze, run dbt, promote a serving snapshot."""
     args = build_parser().parse_args(argv)
@@ -127,27 +231,16 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
     run = PipelineRun(run_id=uuid.uuid4().hex[:12], started_at=clock.now())
     ops.save_run(run)
 
-    warehouse_path = settings.data_dir / "warehouse.duckdb"
     try:
-        # The three phases each need the single writer, and dbt runs in its own
-        # process, so the connection is handed over rather than held. The outer
-        # flock is what makes that safe: nobody else can take the file between
-        # phases. Holding one connection across the dbt call would deadlock the
-        # run against itself -- which is exactly what it did the first time.
         with ExclusiveLock(settings.data_dir / "pipeline.lock"):
-            with DuckDBWarehouse(warehouse_path) as warehouse:
-                outcome = BuildWarehouse(
-                    object_store=build_object_store(settings),
-                    warehouse=warehouse,
-                    registry=registry,
-                ).run(snapshot_id=run.run_id)
-
-            if not args.skip_dbt:
-                run_dbt(warehouse_path, run.run_id, registry.commit.sha)
-
-            if not args.no_snapshot:
-                with DuckDBWarehouse(warehouse_path) as warehouse:
-                    warehouse.snapshot_to(settings.data_dir / "serving.duckdb")
+            result = load_and_build(
+                settings,
+                registry,
+                snapshot_id=run.run_id,
+                skip_dbt=args.skip_dbt,
+                promote_snapshot=not args.no_snapshot,
+            )
+        outcome = result.outcome
     except LockHeldError as exc:
         print(f"another run holds the lock: {exc}", file=sys.stderr)
         return 3

@@ -28,7 +28,7 @@ client and a database handle.
 | M1 ✅ · Architecture skeleton and instrument registry | Add an instrument in one file |
 | M2 ✅ · Ingestion — ports, adapters, error taxonomy | Have the price history on disk |
 | M3 ✅ · Two stores and dbt marts | Query a clean series |
-| **M4 · First light — decision → Telegram, on a schedule** | **Read a daily digest. Rung 0 of the trust ladder** |
+| **M4 🔨 · First light — decision → Telegram, on a schedule** | **Read a daily digest. Rung 0 of the trust ladder** |
 | | *from here it is in daily use, and everything after improves it* |
 | **Stage 2 — widen and harden** | |
 | M5 · Full universe, costs, tradeability | Act on instruments you can actually buy |
@@ -364,7 +364,7 @@ command already and the daily entrypoint will chain ingest → build → evaluat
 
 ---
 
-## M4 — First light  ⭐
+## M4 — First light  ⭐  🔨 BUILT (2026-09-06) — soaking
 
 *Goal: the pipeline runs without you and tells you something. This is the milestone that turns the
 repo into a system.*
@@ -375,58 +375,61 @@ rule "deleted at M7"; instead the rule is expressed as a hand-constructed AST pa
 the final one from day one.
 
 ### Tasks
-- [ ] `domain/decision.py`: the `Decision` entity — one per strategy per evaluation, holding the
+- [x] `domain/decision.py`: the `Decision` entity — one per strategy per evaluation, holding the
       full target portfolio, `as_of`, `strategy_version`, `snapshot_id` (`PROJECT.md` §9.4)
-- [ ] `domain/evaluator.py`: `decide(features, ast, as_of) -> Decision`. Pure, clock-injected, no IO
-- [ ] The first rule as a **hand-built AST** — SMA(20)/SMA(50) cross over the slice universe. Three
+- [x] `domain/evaluator.py`: `decide(features, ast, as_of) -> Decision`. Pure, clock-injected, no IO
+- [x] The first rule as a **hand-built AST** — SMA(20)/SMA(50) cross over the slice universe. Three
       node types, no parser. M7 adds the parser that produces the same shape
-- [ ] `application/evaluate_strategies.py` and `application/deliver_alerts.py`
-- [ ] `alerts_outbox` in the ops store, unique on `(strategy_id, strategy_version, decision_id)`,
+- [x] `application/evaluate_strategies.py` and `application/deliver_alerts.py`
+- [x] `alerts_outbox` in the ops store, unique on `(strategy_id, strategy_version, decision_id)`,
       with claim-and-mark semantics. **Delivery is per-decision and atomic** — never per-instrument,
       or a crash mid-batch delivers half a rotation (`PROJECT.md` §9.4)
-- [ ] `TelegramNotifier` behind the `Notifier` port; recording fake for tests. Every message carries
+- [x] `TelegramNotifier` behind the `Notifier` port; recording fake for tests. Every message carries
       `as_of`, `strategy_version` and `snapshot_id`
-- [ ] `entrypoints/cli/daily.py`: ingest → load → `dbt build` → evaluate → deliver, each step logged
+- [x] `entrypoints/cli/daily.py`: ingest → load → `dbt build` → evaluate → deliver, each step logged
       and its status written to `pipeline_runs`. This is the composition root — the **only** place
       that constructs adapters
-- [ ] **Daily digest** — a fixed-time message regardless of signals: bars ingested, freshest date per
+- [x] **Daily digest** — a fixed-time message regardless of signals: bars ingested, freshest date per
       universe, checks passed/failed, restatements, decisions evaluated and fired
-- [ ] `positions_actual` in the ops store plus a `/position <sym> <units>` command, and a digest line
+- [x] `positions_actual` in the ops store plus a `/position <sym> <units>` command, and a digest line
       reporting **target versus actual drift** (`PROJECT.md` §7.6). This is what makes the daily
       message worth reading rather than worth muting — most days it should say no action
-- [ ] `/pause`, `/mute <sym> <until>` and `/hold` (`PROJECT.md` §7.7). A paused strategy keeps
+- [x] `/pause`, `/mute <sym> <until>` and `/hold` (`PROJECT.md` §7.7). A paused strategy keeps
       computing and recording so the counterfactual survives; **nothing is ever suppressed silently**
       — the digest always lists what was withheld and why
-- [ ] **Command intake without a long-lived process.** M4 is a timer firing a CLI run, not a daemon,
+- [x] **Command intake without a long-lived process.** M4 is a timer firing a CLI run, not a daemon,
       so there is no bot process polling for `/position`, `/pause`, `/mute` or `/hold`. The run
       drains pending updates with a single `getUpdates` call before it evaluates, applies and
       records them, and the digest states when each was applied. Commands therefore take effect on
       the next run rather than immediately, which the bot says in its reply rather than leaving the
       user to discover. The `alert-worker` of `PROJECT.md` §4.5 becomes a real process at M6;
       delivery until then is in-process in the same run
-- [ ] **Dead-man's switch** — ping healthchecks.io on success; grace window set so a missed run
+- [x] **Dead-man's switch** — ping healthchecks.io on success; grace window set so a missed run
       emails within the hour
-- [ ] `deploy/finflow-daily.{service,timer}` — a `systemd` timer on the box running `make daily`,
+- [x] `deploy/finflow-daily.{service,timer}` — a `systemd` timer on the box running `make daily`,
       with `Persistent=true` so a run missed while the machine was off fires on the next boot.
       Secrets come from the root-owned `.env` (mode 600); all state is already on local disk, so
       nothing is pushed, pulled or round-tripped
-- [ ] Tests: exactly-once delivery across a simulated crash between claim and mark; a stale snapshot
+- [x] Tests: exactly-once delivery across a simulated crash between claim and mark; a stale snapshot
       produces a message that says it is stale; a `FrozenClock` makes the whole run deterministic
-- [ ] `concurrency:` group on the workflow so a manual backfill and the schedule cannot overlap, and
+- [x] `concurrency:` group on the workflow so a manual backfill and the schedule cannot overlap, and
       an `flock` in the CLI entrypoint so the same holds locally (`PROJECT.md` §11.6)
-- [ ] Schedule in **UTC**, timed well after the US close, tolerant of a late vendor, with a
+- [x] Schedule in **UTC**, timed well after the US close, tolerant of a late vendor, with a
       mid-morning retry before declaring a bad day
-- [ ] Nightly ops-store backup: `VACUUM INTO` → gzip → age-encrypt → a **second physical device**
+- [x] Nightly ops-store backup: `VACUUM INTO` → gzip → age-encrypt → a **second physical device**
       (external disk or NAS mount), 30 daily and 12 monthly retained. Plus a nightly
       `rsync --link-dest` mirror of the raw zone to the same device — a copy on the same disk is not
       a backup, and on one machine that is the failure that actually happens
-- [ ] Versioned migrations for `ops.sqlite`, applied on start. It is the one piece of state a rebuild
+- [x] Versioned migrations for `ops.sqlite`, applied on start. It is the one piece of state a rebuild
       cannot recreate (`PROJECT.md` §11.4)
-- [ ] `docs/RUNBOOK.md` v1 — what each alert means, first three things to check
+- [x] `docs/RUNBOOK.md` v1 — what each alert means, first three things to check
 
 ### Acceptance
-- The scheduled workflow has run green on **seven consecutive days** with no manual intervention.
-  This is the acceptance criterion; do not move on before it is met
+- ⏳ The scheduled workflow has run green on **seven consecutive days** with no manual intervention.
+  This is the acceptance criterion; do not move on before it is met.
+  **Everything else on this list is met and asserted by a test; this one is a clock.** The timer is
+  installed (`deploy/`), the run is green offline end to end, and the soak starts on the first
+  scheduled fire. M5 does not begin until seven days have passed
 - The digest is readable in ten seconds on a phone and says "no action" on a quiet day. If it takes
   longer or manufactures activity, fix that before widening anything — an unread digest is a system
   with no users (`PROJECT.md` §1.2)
@@ -437,6 +440,26 @@ the final one from day one.
 - Deliberately breaking the Stooq client causes a failure message, not silence
 - Deleting the local warehouse and re-running rebuilds it from the raw zone on disk
 - `lint-imports` still passes: `entrypoints` is the only package importing an adapter
+
+### What M4 actually shipped
+
+`finflow-daily` chains commands → ingest → build → dbt → evaluate → deliver → digest, each step
+recording its own status and none of them able to stop the digest going out. The rule is a
+hand-built AST through the final `decide()`; the outbox is content-addressed and unique on
+`(strategy_id, strategy_version, decision_id)`; controls, holdings and the command cursor live in
+`ops.sqlite` behind migration 3. Decisions are recorded daily but **only messaged when the
+instruction changes** (ADR 0011) — the guard on the ≥95% no-action target.
+
+Two things were decided during the build and written down as ADRs rather than left in the code:
+decisions are authoritative in the ops store rather than the disposable warehouse, and their
+identity is their content (ADR 0010). One pre-existing bug surfaced and was fixed: a registry
+section with no rows exported a column-less frame, which landed as a placeholder table and failed
+`int_macro_released` — the exports now state their schemas in full.
+
+**Carried into M5:** the rebalance band is a flat 5 percentage points and should be derived from the
+per-instrument spreads already in the registry; netting across strategies is equal-capital and
+becomes `portfolio.yml`; a failing dbt check blocks *every* instruction rather than only the
+affected instruments, which is M6's data-quality work.
 
 ---
 
