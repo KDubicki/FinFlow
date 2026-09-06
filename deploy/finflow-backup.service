@@ -1,0 +1,30 @@
+# The nightly copy to a second physical device (PROJECT.md §11.3).
+#
+# Its own unit rather than a step of the daily run: a backup that only happens
+# when the pipeline succeeds is missing on exactly the days the pipeline broke
+# something.
+
+[Unit]
+Description=FinFlow ops-store backup and raw-zone mirror
+Documentation=file:///opt/finflow/docs/RUNBOOK.md
+RequiresMountsFor=/mnt/backup
+
+[Service]
+Type=oneshot
+User=finflow
+Group=finflow
+WorkingDirectory=/opt/finflow
+EnvironmentFile=/etc/finflow/finflow.env
+
+ExecStart=/opt/finflow/.venv/bin/finflow-backup
+
+TimeoutStartSec=1800
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/finflow/data /mnt/backup
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=finflow-backup

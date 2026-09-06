@@ -11,6 +11,58 @@ import polars as pl
 
 from finflow.registry.models import Registry
 
+INSTRUMENT_SCHEMA: dict[str, pl.DataType] = {
+    "symbol": pl.String(),
+    "name": pl.String(),
+    "asset_class": pl.String(),
+    "sub_class": pl.String(),
+    "exchange": pl.String(),
+    "currency": pl.String(),
+    "calendar": pl.String(),
+    "inception": pl.Date(),
+    "backfill_start": pl.Date(),
+    "delisted": pl.Date(),
+    "return_basis": pl.String(),
+    "commission_bps": pl.Float64(),
+    "spread_bps": pl.Float64(),
+    "min_adv_usd": pl.Float64(),
+    "ucits_equivalent": pl.String(),
+    "tradeable_eu": pl.Boolean(),
+    "enabled": pl.Boolean(),
+    "primary_source": pl.String(),
+    "registry_commit": pl.String(),
+    "valid_from": pl.Datetime(time_zone="UTC"),
+}
+
+MEMBER_SCHEMA: dict[str, pl.DataType] = {
+    "universe": pl.String(),
+    "description": pl.String(),
+    "benchmark_symbol": pl.String(),
+    "symbol": pl.String(),
+    "valid_from": pl.Date(),
+    "valid_to": pl.Date(),
+}
+
+MACRO_SCHEMA: dict[str, pl.DataType] = {
+    "series_id": pl.String(),
+    "source_id": pl.String(),
+    "source": pl.String(),
+    "unit": pl.String(),
+    "frequency": pl.String(),
+    "release_lag_days": pl.Int64(),
+    "revised": pl.Boolean(),
+    "vintage_aware": pl.Boolean(),
+}
+"""Schemas stated in full rather than inferred.
+
+An empty registry section is normal — a slice with no macro series, a fresh
+install with no universes — and an inferred frame with no rows has no *columns*
+either, which lands in the warehouse as a placeholder table and fails every
+model downstream with an error naming the wrong thing. Stating the schema makes
+the empty case produce a well-formed empty table, which is what the models
+expect.
+"""
+
 
 def to_frames(registry: Registry) -> dict[str, pl.DataFrame]:
     """Every registry table, keyed by the warehouse table name."""
@@ -52,20 +104,7 @@ def _instruments(registry: Registry) -> pl.DataFrame:
             }
             for i in registry.instruments
         ],
-        # Explicit types for every nullable column. A column that happens to be
-        # all-null infers as Null and lands in DuckDB as INTEGER, which the mart
-        # contract then rejects -- correctly, but the fix belongs here.
-        schema_overrides={
-            "valid_from": pl.Datetime(time_zone="UTC"),
-            "inception": pl.Date,
-            "backfill_start": pl.Date,
-            "delisted": pl.Date,
-            "sub_class": pl.String,
-            "min_adv_usd": pl.Float64,
-            "ucits_equivalent": pl.String,
-            "primary_source": pl.String,
-            "registry_commit": pl.String,
-        },
+        schema=INSTRUMENT_SCHEMA,
     )
 
 
@@ -82,14 +121,7 @@ def _members(registry: Registry) -> pl.DataFrame:
         for u in registry.universes
         for m in u.members
     ]
-    return pl.DataFrame(
-        rows,
-        schema_overrides={
-            "valid_from": pl.Date,
-            "valid_to": pl.Date,
-            "description": pl.String,
-        },
-    )
+    return pl.DataFrame(rows, schema=MEMBER_SCHEMA)
 
 
 def _macro(registry: Registry) -> pl.DataFrame:
@@ -106,5 +138,6 @@ def _macro(registry: Registry) -> pl.DataFrame:
                 "vintage_aware": m.vintage_aware,
             }
             for m in registry.macro
-        ]
+        ],
+        schema=MACRO_SCHEMA,
     )

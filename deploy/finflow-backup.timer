@@ -1,0 +1,14 @@
+# 02:00 UTC — before the daily run, so the copy is of a quiet database and the
+# two jobs never contend for the same disk.
+
+[Unit]
+Description=Nightly FinFlow backup
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

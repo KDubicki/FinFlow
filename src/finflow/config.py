@@ -74,6 +74,47 @@ class Settings(BaseSettings):
     # ---- Alerts ----------------------------------------------------------
     telegram_bot_token: SecretStr | None = None
     telegram_chat_id: str | None = None
+    telegram_base_url: str = "https://api.telegram.org"
+
+    rebalance_band_pp: float = Field(
+        default=5.0,
+        ge=0,
+        le=50,
+        description=(
+            "Drift below this many percentage points is reported as a hold "
+            "rather than an instruction. The guard on the >=95% no-action "
+            "target (PROJECT.md §1.2)."
+        ),
+    )
+    alert_lease_minutes: float = Field(
+        default=30.0,
+        gt=0,
+        description=(
+            "How long a claimed outbox row stays claimed. Long enough that a "
+            "slow send is not double-claimed; short enough that a run killed "
+            "mid-delivery is retried on the next timer."
+        ),
+    )
+
+    # ---- Monitoring ------------------------------------------------------
+    healthchecks_url: str | None = Field(
+        default=None,
+        description=(
+            "Dead-man's switch ping URL. Absent means nothing is watching, "
+            "which the run says out loud rather than assuming somebody knows."
+        ),
+    )
+
+    # ---- Backups ---------------------------------------------------------
+    backup_keep_daily: int = Field(default=30, ge=1)
+    backup_keep_monthly: int = Field(default=12, ge=0)
+    age_recipient: str | None = Field(
+        default=None,
+        description=(
+            "age public key. When set, ops-store backups are encrypted with "
+            "the `age` binary before they leave the machine."
+        ),
+    )
 
     # ---- Ingestion tuning ------------------------------------------------
     http_timeout_seconds: float = Field(default=30.0, gt=0)

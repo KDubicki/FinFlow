@@ -129,6 +129,11 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-extras
+      # The end-to-end daily test runs a real `dbt build`, so the packages have
+      # to be there before pytest starts. Installed from the committed lockfile,
+      # not resolved fresh.
+      - name: Install dbt packages
+        run: uv run dbt deps --project-dir dbt --profiles-dir dbt
       - name: pytest
         run: uv run pytest -m "not integration" --cov --cov-report=xml --cov-report=term-missing
       - uses: actions/upload-artifact@v4

@@ -15,6 +15,7 @@ import polars as pl
 import pytest
 
 from finflow.adapters.ops.backup import backup, latest_backup, prune, restore
+from finflow.adapters.ops.migrations import MIGRATIONS, applied_versions, migrate
 from finflow.adapters.ops.sqlite import SqliteOpsStore
 from finflow.adapters.storage import InMemoryObjectStore, LocalObjectStore
 from finflow.adapters.warehouse import DuckDBWarehouse
@@ -366,23 +367,48 @@ class TestOpsBackup:
 
 
 class TestMigrations:
+    # Asserted against MIGRATIONS rather than a literal: a hard-coded version
+    # number turns "we shipped a migration" into a failing test, which trains
+    # everyone to edit the assertion instead of reading it.
     def test_migrations_are_applied_once_and_are_idempotent(self, tmp_path: Path) -> None:
+        latest = MIGRATIONS[-1][0]
         first = SqliteOpsStore(tmp_path / "ops.sqlite")
-        assert first.schema_version == 2
+        assert first.schema_version == latest
         second = SqliteOpsStore(tmp_path / "ops.sqlite")
-        assert second.schema_version == 2
+        assert second.schema_version == latest
 
     def test_an_existing_database_gains_new_tables(self, tmp_path: Path) -> None:
         import sqlite3
-
-        from finflow.adapters.ops.migrations import migrate
 
         path = tmp_path / "ops.sqlite"
         conn = sqlite3.connect(path)
         applied = migrate(conn)
         conn.close()
-        assert applied == [1, 2]
+        assert applied == [version for version, _, _ in MIGRATIONS]
 
         conn = sqlite3.connect(path)
         assert migrate(conn) == []
         conn.close()
+
+    def test_a_database_stuck_at_an_old_version_catches_up(self, tmp_path: Path) -> None:
+        # The failure this exists to prevent: the box has a live ops store, a
+        # deploy adds a table, and the daily run has to find it there. Applying
+        # only the first migration by hand is the closest thing to an old
+        # installation we can build in a test.
+        import sqlite3
+
+        path = tmp_path / "ops.sqlite"
+        conn = sqlite3.connect(path)
+        version, name, sql = MIGRATIONS[0]
+        applied_versions(conn)
+        conn.executescript(sql)
+        conn.execute("INSERT INTO schema_migrations (version, name) VALUES (?, ?)", (version, name))
+        conn.commit()
+        conn.close()
+
+        store = SqliteOpsStore(path)
+        assert store.schema_version == MIGRATIONS[-1][0]
+        # The M4 tables are the ones the daily run cannot start without.
+        assert store.pending() == ()
+        assert store.controls() == ()
+        assert store.command_cursor("telegram") is None

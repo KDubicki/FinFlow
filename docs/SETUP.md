@@ -232,6 +232,34 @@ so it is not decided at 06:00 on a Tuesday.
 
 ---
 
+## The daily run (M4)
+
+Once there is a bot and a box, three commands are the whole operation:
+
+```bash
+make daily-dry     # rehearse: prints the digest, sends nothing, drains nothing
+make daily         # the real thing — what the timer runs
+make restore-check # the monthly drill: verify the backup actually restores
+```
+
+What to set in `.env` (all of it is documented in `.env.example`):
+
+| Key | Why |
+|---|---|
+| `FINFLOW_TELEGRAM_BOT_TOKEN` · `FINFLOW_TELEGRAM_CHAT_ID` | Where the digest goes. Talk to @BotFather, message the bot once, read the chat id from `getUpdates`. Only that chat is obeyed. |
+| `FINFLOW_HEALTHCHECKS_URL` | The dead-man's switch. Without it the run says out loud that nothing is watching. |
+| `FINFLOW_BACKUP_DIR` | A **second physical device**. A copy on the same disk is not a backup. |
+| `FINFLOW_REBALANCE_BAND_PP` | Raise it if the digest gets chatty. Five points by default. |
+
+Nothing is required. With no bot token the run prints the digest instead of
+sending it, and every other step still happens — which is deliberate: a code
+path that only executes in production is one that is only ever debugged there.
+
+`deploy/README.md` has the systemd units and the schedule; `docs/RUNBOOK.md` has
+what each message means and the first three things to check.
+
+---
+
 ## What works right now without any of the above
 
 ```

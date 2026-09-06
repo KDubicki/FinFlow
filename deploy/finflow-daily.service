@@ -1,0 +1,59 @@
+# The daily pipeline: commands -> ingest -> build -> evaluate -> deliver -> digest.
+#
+# A oneshot unit fired by finflow-daily.timer, not a service that stays up.
+# PROJECT.md §4.5: M4 is a timer, not a daemon — there is no process to crash
+# between runs, and nothing to restart-loop unnoticed.
+#
+# Install:
+#   sudo cp deploy/finflow-*.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now finflow-daily.timer finflow-backup.timer
+
+[Unit]
+Description=FinFlow daily pipeline
+Documentation=file:///opt/finflow/docs/RUNBOOK.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=finflow
+Group=finflow
+WorkingDirectory=/opt/finflow
+
+# Secrets live only here, root-owned and mode 600 (daily-operations standard 6).
+EnvironmentFile=/etc/finflow/finflow.env
+
+ExecStart=/opt/finflow/.venv/bin/finflow-daily
+
+# The run holds an flock of its own (PROJECT.md §11.6), so a slow run and the
+# next timer cannot both write. This is the outer bound: a run still going after
+# an hour is hung, and killing it lets the dead-man's switch report the failure
+# rather than leaving the watchdog waiting in silence.
+TimeoutStartSec=3600
+
+# One retry, twenty minutes later. A vendor that is late at 05:30 is usually
+# there by 05:50, and more attempts than this turn a bad morning into a
+# rate-limit ban.
+Restart=on-failure
+RestartSec=1200
+StartLimitBurst=2
+
+# The blast radius of a compromised vendor client. The raw zone is protected by
+# a port with no delete method; this is the second layer.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/finflow/data /opt/finflow/dbt/target /opt/finflow/dbt/logs
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=finflow-daily
+
+[Install]
+WantedBy=multi-user.target
