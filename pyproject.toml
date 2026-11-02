@@ -7,8 +7,8 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 
 dependencies = [
-    "pydantic>=2.9",
-    "pydantic-settings>=2.6",
+    "pydantic>=2.14.2",
+    "pydantic-settings>=2.16.2",
     "structlog>=24.4",
     "pyyaml>=6.0",
     "exchange-calendars>=4.5",
@@ -16,19 +16,19 @@ dependencies = [
     "httpx>=0.28",
     "patito>=0.8",
     "duckdb>=1.1",
-    "dbt-duckdb>=1.9",
+    "dbt-duckdb>=1.11.1",
     "pyarrow>=18",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.3",
+    "pytest>=9.2.0",
     "pytest-cov>=6.0",
-    "mypy>=1.13",
-    "ruff>=0.8",
-    "pre-commit>=4.0",
+    "mypy>=2.4.1",
+    "ruff>=0.17.3",
+    "pre-commit>=4.7.0",
     "types-pyyaml>=6.0",
-    "import-linter>=2.1",
+    "import-linter>=2.15",
     "pip-audit>=2.7",
     "respx>=0.22",
 ]
